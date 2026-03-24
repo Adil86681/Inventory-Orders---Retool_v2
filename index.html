@@ -379,6 +379,21 @@
   .toast.show { transform: translateY(0); opacity: 1; }
   .tracking-link { color: var(--accent2); text-decoration: none; font-family: var(--mono); font-size: 11px; }
   .tracking-link:hover { text-decoration: underline; }
+  /* SKU tooltip on product name hover */
+  .sku-tooltip-wrap { position: relative; display: inline; cursor: default; }
+  .sku-tooltip-wrap .sku-tip {
+    display: none; position: absolute; bottom: calc(100% + 5px); left: 50%; transform: translateX(-50%);
+    background: var(--navy); border: 1px solid var(--border2);
+    color: var(--accent2); font-family: var(--mono); font-size: 11px;
+    padding: 4px 9px; border-radius: 5px; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5); z-index: 200; pointer-events: none;
+  }
+  .sku-tooltip-wrap .sku-tip::after {
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: var(--border2);
+  }
+  .sku-tooltip-wrap:hover .sku-tip { display: block; }
+
   .comment-cell { min-width: 140px; max-width: 200px; }
   .comment-input {
     width: 100%; background: transparent; border: 1px solid transparent;
@@ -463,15 +478,24 @@
       <span class="search-icon">⌕</span>
       <input type="text" id="inv-search" placeholder="Search by order ID, product, customer..." oninput="invRenderTable()">
     </div>
-    <select id="inv-filterWarehouse" onchange="invRenderTable()">
-      <option value="">All Warehouses</option>
-      <option value="Warehouse - Coventry UK">Coventry UK</option>
-      <option value="Warehouse - Germany EU">Germany EU</option>
-      <option value="Warehouse - Oshawa CAN">Oshawa CAN</option>
-    </select>
-    <select id="inv-filterCustomer" onchange="invRenderTable()"><option value="">All Customers</option></select>
+    <div class="ms-wrap" id="inv-warehouseWrap">
+      <button class="ms-trigger" id="inv-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('inv-warehouseMenu', this)">All Warehouses</button>
+      <div class="ms-dropdown" id="inv-warehouseMenu">
+        <label class="ms-option"><input type="checkbox" value="Warehouse - Coventry UK" onchange="invRenderTable()"> Coventry UK</label>
+        <label class="ms-option"><input type="checkbox" value="Warehouse - Germany EU" onchange="invRenderTable()"> Germany EU</label>
+        <label class="ms-option"><input type="checkbox" value="Warehouse - Oshawa CAN" onchange="invRenderTable()"> Oshawa CAN</label>
+      </div>
+    </div>
+    <div class="ms-wrap" id="inv-categoryWrap">
+      <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Categories" onclick="msToggle('inv-categoryMenu', this)">All Categories</button>
+      <div class="ms-dropdown" id="inv-categoryMenu"></div>
+    </div>
+    <div class="ms-wrap" id="inv-customerWrap">
+      <button class="ms-trigger" id="inv-customerTrigger" data-all-label="All Customers" onclick="msToggle('inv-customerMenu', this)">All Customers</button>
+      <div class="ms-dropdown" id="inv-customerMenu"></div>
+    </div>
     <div class="ms-wrap" id="inv-statusWrap">
-      <button class="ms-trigger" id="inv-statusTrigger" onclick="msToggle('inv-statusMenu', this)">All Statuses</button>
+      <button class="ms-trigger" id="inv-statusTrigger" data-all-label="All Statuses" onclick="msToggle('inv-statusMenu', this)">All Statuses</button>
       <div class="ms-dropdown" id="inv-statusMenu">
         <label class="ms-option"><input type="checkbox" value="ORDERED" onchange="invRenderTable()"> Ordered</label>
         <label class="ms-option"><input type="checkbox" value="PROCESSING" onchange="invRenderTable()"> Processing</label>
@@ -553,10 +577,20 @@
       <span class="search-icon">⌕</span>
       <input type="text" id="cs-search" placeholder="Search by customer, product, PO number, tracking..." oninput="csRenderTable()">
     </div>
-    <select id="cs-filterWarehouse" onchange="csRenderTable()"><option value="">All Warehouses</option></select>
-    <select id="cs-filterCustomer" onchange="csRenderTable()"><option value="">All Customers</option></select>
+    <div class="ms-wrap" id="cs-warehouseWrap">
+      <button class="ms-trigger" id="cs-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('cs-warehouseMenu', this)">All Warehouses</button>
+      <div class="ms-dropdown" id="cs-warehouseMenu"></div>
+    </div>
+    <div class="ms-wrap" id="cs-categoryWrap">
+      <button class="ms-trigger" id="cs-categoryTrigger" data-all-label="All Categories" onclick="msToggle('cs-categoryMenu', this)">All Categories</button>
+      <div class="ms-dropdown" id="cs-categoryMenu"></div>
+    </div>
+    <div class="ms-wrap" id="cs-customerWrap">
+      <button class="ms-trigger" id="cs-customerTrigger" data-all-label="All Customers" onclick="msToggle('cs-customerMenu', this)">All Customers</button>
+      <div class="ms-dropdown" id="cs-customerMenu"></div>
+    </div>
     <div class="ms-wrap" id="cs-statusWrap">
-      <button class="ms-trigger" id="cs-statusTrigger" onclick="msToggle('cs-statusMenu', this)">All Statuses</button>
+      <button class="ms-trigger" id="cs-statusTrigger" data-all-label="All Statuses" onclick="msToggle('cs-statusMenu', this)">All Statuses</button>
       <div class="ms-dropdown" id="cs-statusMenu">
         <label class="ms-option"><input type="checkbox" value="EXPECTED" onchange="csRenderTable()"> Expected</label>
         <label class="ms-option"><input type="checkbox" value="PARTIALLY_RECEIVED" onchange="csRenderTable()"> Partially Received</label>
@@ -772,10 +806,10 @@ function msToggle(menuId, trigger) {
   document.querySelectorAll('.ms-trigger.open').forEach(t => t.classList.remove('open'));
   if (!isOpen) { menu.classList.add('open'); trigger.classList.add('open'); }
 }
-function msUpdateLabel(menu, trigger) {
+function msUpdateLabel(menu, trigger, allLabel) {
   const checked = [...menu.querySelectorAll('input:checked')];
   trigger.innerHTML = '';
-  if (checked.length === 0) { trigger.textContent = 'All Statuses'; return; }
+  if (checked.length === 0) { trigger.textContent = allLabel || 'All'; return; }
   checked.slice(0,2).forEach(c => {
     const chip = document.createElement('span'); chip.className = 'ms-chip';
     chip.textContent = c.closest('.ms-option').textContent.trim();
@@ -793,15 +827,23 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.ms-trigger.open').forEach(t => t.classList.remove('open'));
     }
   });
-  document.querySelectorAll('.ms-dropdown input[type=checkbox]').forEach(cb => {
+  // Wire up static dropdowns (status menus); dynamic ones are wired after population
+  wireMsCheckboxes(document.getElementById('inv-statusMenu'));
+  wireMsCheckboxes(document.getElementById('cs-statusMenu'));
+  // Wire static inv warehouse menu
+  wireMsCheckboxes(document.getElementById('inv-warehouseMenu'));
+});
+function wireMsCheckboxes(menu) {
+  if (!menu) return;
+  menu.querySelectorAll('input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', () => {
-      const menu = cb.closest('.ms-dropdown');
       const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
+      const allLabel = trigger.dataset.allLabel || 'All';
       cb.closest('.ms-option').classList.toggle('checked', cb.checked);
-      msUpdateLabel(menu, trigger);
+      msUpdateLabel(menu, trigger, allLabel);
     });
   });
-});
+}
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -893,19 +935,42 @@ function invUnreceive(id) {
   invSaveState(); invRenderAll(); showToast('Marked as unreceived');
   sheetsPush(INV_SHEET, id, { app_status: invOrders[id].appStatus, received_at:'', comment: allComments[id]||'', retool_data: invRetoolData[id]||'' });
 }
+function msPopulateDynamic(menuId, triggerId, values, allLabel) {
+  const menu = document.getElementById(menuId);
+  const trigger = document.getElementById(triggerId);
+  if (!menu || !trigger) return;
+  const prev = new Set([...menu.querySelectorAll('input:checked')].map(c => c.value));
+  menu.innerHTML = values.map(v =>
+    `<label class="ms-option ${prev.has(v)?'checked':''}"><input type="checkbox" value="${v.replace(/"/g,'&quot;')}" ${prev.has(v)?'checked':''} onchange="msOnChange(this,'${allLabel}')"> ${v}</label>`
+  ).join('');
+  wireMsCheckboxes(menu);
+  msUpdateLabel(menu, trigger, allLabel);
+}
+function msOnChange(cb, allLabel) {
+  const menu = cb.closest('.ms-dropdown');
+  const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
+  cb.closest('.ms-option').classList.toggle('checked', cb.checked);
+  msUpdateLabel(menu, trigger, allLabel);
+  // trigger re-render for the right tab
+  if (menu.id.startsWith('inv-')) invRenderTable();
+  else csRenderTable();
+}
 function invUpdateFilters() {
-  const sel=document.getElementById('inv-filterCustomer'); const cur=sel.value;
-  const custs=[...new Set(Object.values(invOrders).map(o=>o.organization_name).filter(Boolean))].sort();
-  sel.innerHTML='<option value="">All Customers</option>'+custs.map(c=>`<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+  const cats = [...new Set(Object.values(invOrders).map(o => o.category).filter(Boolean))].sort();
+  msPopulateDynamic('inv-categoryMenu', 'inv-categoryTrigger', cats, 'All Categories');
+  const custs = [...new Set(Object.values(invOrders).map(o => o.organization_name).filter(Boolean))].sort();
+  msPopulateDynamic('inv-customerMenu', 'inv-customerTrigger', custs, 'All Customers');
 }
 function invGetFiltered() {
   const search=document.getElementById('inv-search').value.toLowerCase();
-  const wh=document.getElementById('inv-filterWarehouse').value;
-  const cust=document.getElementById('inv-filterCustomer').value;
+  const whs=[...document.querySelectorAll('#inv-warehouseMenu input:checked')].map(c=>c.value);
+  const cats=[...document.querySelectorAll('#inv-categoryMenu input:checked')].map(c=>c.value);
+  const custs=[...document.querySelectorAll('#inv-customerMenu input:checked')].map(c=>c.value);
   const checked=[...document.querySelectorAll('#inv-statusMenu input:checked')].map(c=>c.value);
   return Object.values(invOrders).filter(o=>{
-    if (wh   && o.warehouse_name!==wh)    return false;
-    if (cust && o.organization_name!==cust) return false;
+    if (whs.length   && !whs.includes(o.warehouse_name))    return false;
+    if (cats.length  && !cats.includes(o.category))         return false;
+    if (custs.length && !custs.includes(o.organization_name)) return false;
     if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) { const hay=[o.inventory_order_id,o.organization_name,o.product_title,o.warehouse_name,o.tracking_number,o.purchase_number].join(' ').toLowerCase(); if(!hay.includes(search)) return false; }
     return true;
@@ -979,7 +1044,7 @@ function invRenderTable() {
       <td class="id-cell">${o.inventory_order_id}${isNew?'<span class="new-tag">new</span>':''}</td>
       <td>${o.organization_name||'—'}</td>
       <td class="copy-col-cell"><div class="copy-col"><button class="btn-copy" onclick="invCopyId('${eid}',this)">⎘ SKU</button><button class="btn-copy" onclick="invCopyIdProduct('${eid}','${eprod}',this)">⎘ SKU+Product</button></div></td>
-      <td class="product-cell">${o.product_title||'—'}</td>
+      <td class="product-cell"><span class="sku-tooltip-wrap">${o.product_title||'—'}<span class="sku-tip">SKU: ${o.sku_id||'—'}</span></span></td>
       <td class="mono">${o.quantity||'—'}</td>
       <td class="mono">${whLabel(o.warehouse_name||'')}</td>
       <td class="mono">${o.purchase_number||'—'}</td>
@@ -1185,21 +1250,23 @@ function csMarkCompleted(id) {
   showToast('Marked as Completed — shipment removed');
 }
 function csUpdateFilters() {
-  const custSel=document.getElementById('cs-filterCustomer'); const curC=custSel.value;
-  const custs=[...new Set(Object.values(csOrders).map(o=>o.customer_name).filter(Boolean))].sort();
-  custSel.innerHTML='<option value="">All Customers</option>'+custs.map(c=>`<option value="${c}" ${c===curC?'selected':''}>${c}</option>`).join('');
-  const whSel=document.getElementById('cs-filterWarehouse'); const curW=whSel.value;
-  const whs=[...new Set(Object.values(csOrders).map(o=>o.warehouse_name).filter(Boolean))].sort();
-  whSel.innerHTML='<option value="">All Warehouses</option>'+whs.map(w=>`<option value="${w}" ${w===curW?'selected':''}>${whLabel(w)}</option>`).join('');
+  const whs = [...new Set(Object.values(csOrders).map(o => o.warehouse_name).filter(Boolean))].sort();
+  msPopulateDynamic('cs-warehouseMenu', 'cs-warehouseTrigger', whs, 'All Warehouses');
+  const cats = [...new Set(Object.values(csOrders).map(o => o.category).filter(Boolean))].sort();
+  msPopulateDynamic('cs-categoryMenu', 'cs-categoryTrigger', cats, 'All Categories');
+  const custs = [...new Set(Object.values(csOrders).map(o => o.customer_name).filter(Boolean))].sort();
+  msPopulateDynamic('cs-customerMenu', 'cs-customerTrigger', custs, 'All Customers');
 }
 function csGetFiltered() {
   const search=document.getElementById('cs-search').value.toLowerCase();
-  const wh=document.getElementById('cs-filterWarehouse').value;
-  const cust=document.getElementById('cs-filterCustomer').value;
+  const whs=[...document.querySelectorAll('#cs-warehouseMenu input:checked')].map(c=>c.value);
+  const cats=[...document.querySelectorAll('#cs-categoryMenu input:checked')].map(c=>c.value);
+  const custs=[...document.querySelectorAll('#cs-customerMenu input:checked')].map(c=>c.value);
   const checked=[...document.querySelectorAll('#cs-statusMenu input:checked')].map(c=>c.value);
   return Object.values(csOrders).filter(o=>{
-    if (wh   && o.warehouse_name!==wh)  return false;
-    if (cust && o.customer_name!==cust) return false;
+    if (whs.length   && !whs.includes(o.warehouse_name))  return false;
+    if (cats.length  && !cats.includes(o.category))       return false;
+    if (custs.length && !custs.includes(o.customer_name)) return false;
     if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) { const hay=[o.customer_name,o.product_title,o.warehouse_name,o.purchase_order_number,o.tracking_code].join(' ').toLowerCase(); if(!hay.includes(search)) return false; }
     return true;
@@ -1258,7 +1325,7 @@ function csRenderTable() {
     else tracking='—';
     return `<tr class="${isRec?'received':''}">
       <td>${o.customer_name||'—'}${isNew?'<span class="new-tag">new</span>':''}</td>
-      <td class="product-cell">${o.product_title||'—'}</td>
+      <td class="product-cell"><span class="sku-tooltip-wrap">${o.product_title||'—'}<span class="sku-tip">SKU: ${o.sku_id||'—'}</span></span></td>
       <td class="copy-col-cell"><div class="copy-col"><button class="btn-copy" onclick="csCopyId('${eid}',this)">⎘ SKU</button><button class="btn-copy" onclick="csCopyIdProduct('${eid}','${ceprod}',this)">⎘ SKU+Product</button></div></td>
       <td class="mono">${o.expected_quantity||'—'}</td>
       <td class="mono">${whLabel(o.warehouse_name||'')}</td>
