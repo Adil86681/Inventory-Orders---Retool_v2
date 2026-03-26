@@ -1489,8 +1489,6 @@ function mgmtIngestRows(rows) {
 }
 
 // ── MGMT REFRESH ─────────────────────────────────────────────────────────────
-// Step 1: User clicks bookmarklet on the MGMT page → scrapes + pushes to sheet
-// Step 2: User clicks Refresh here → pulls from sheet
 function mgmtRefresh() {
   const btn = document.querySelector('button[onclick="mgmtRefresh()"]');
   if (btn) { btn.disabled = true; btn.textContent = '\u21bb Fetching from sheet\u2026'; }
@@ -1505,37 +1503,43 @@ function mgmtRefresh() {
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (!json.ok) throw new Error(json.error || 'Unknown error');
-      var added = 0, seen = new Set(Object.keys(mgmtOrders));
-      if (json.mgmt) {
-        Object.entries(json.mgmt).forEach(function([id, s]) {
-          if (!mgmtOrders[id]) {
-            mgmtOrders[id] = {
-              order_id: id,
-              submitter: s.submitter || '',
-              created_date: s.created_date || '',
-              org: s.org || '',
-              warehouse: s.warehouse || '',
-              mgmt_status: s.mgmt_status || 'Processing',
-              customer_po: s.customer_po || '',
-              appStatus: s.app_status || 'PROCESSING',
-              receivedAt: s.received_at || '',
-              addedAt: new Date().toISOString()
-            };
-            if (s.comment) allComments[id] = s.comment;
-            added++;
-          } else {
-            if (s.app_status) mgmtOrders[id].appStatus = s.app_status;
-            if (s.received_at) mgmtOrders[id].receivedAt = s.received_at;
-            if (s.comment) allComments[id] = s.comment;
-          }
-        });
+      if (!json.mgmt || Object.keys(json.mgmt).length === 0) {
+        showToast('Sheet is empty \u2014 run the bookmarklet on MGMT first');
+        return;
       }
+
+      // Full replace: rebuild mgmtOrders from sheet, preserving local app_status/received_at/comments
+      var newOrders = {};
+      Object.entries(json.mgmt).forEach(function(entry) {
+        var id = entry[0], s = entry[1];
+        var existing = mgmtOrders[id];
+        newOrders[id] = {
+          order_id:     id,
+          submitter:    s.submitter    || '',
+          created_date: s.created_date || '',
+          org:          s.org          || '',
+          warehouse:    s.warehouse    || '',
+          mgmt_status:  s.mgmt_status  || 'Processing',
+          customer_po:  s.customer_po  || '',
+          // Prefer local app_status if already actioned (Received/Completed), else use sheet
+          appStatus:    (existing && existing.appStatus !== 'PROCESSING') ? existing.appStatus : (s.app_status || 'PROCESSING'),
+          receivedAt:   (existing && existing.receivedAt) ? existing.receivedAt : (s.received_at || ''),
+          addedAt:      (existing && existing.addedAt) ? existing.addedAt : new Date().toISOString()
+        };
+        if (s.comment && !allComments[id]) allComments[id] = s.comment;
+      });
+
+      var prevCount = Object.keys(mgmtOrders).length;
+      mgmtOrders = newOrders;
       mgmtSaveState(); commentsSave();
       mgmtRenderAll();
-      var total = Object.keys(json.mgmt || {}).length;
+
+      var newCount = Object.keys(mgmtOrders).length;
+      var diff = newCount - prevCount;
+      var diffStr = diff > 0 ? ' (+' + diff + ' new)' : diff < 0 ? ' (' + diff + ' removed)' : '';
       document.getElementById('mgmt-lastRefresh').textContent =
-        'Last refresh: ' + new Date().toLocaleTimeString() + ' \u2014 ' + total + ' orders in sheet';
-      showToast(added > 0 ? (added + ' new orders added from sheet') : 'Sheet data merged \u2014 ' + total + ' orders');
+        'Last refresh: ' + new Date().toLocaleTimeString() + ' \u2014 ' + newCount + ' orders' + diffStr;
+      showToast('Refreshed \u2014 ' + newCount + ' orders loaded from sheet' + diffStr);
     })
     .catch(function(err) {
       showToast('Fetch failed \u2014 run the bookmarklet on MGMT first, then try again');
