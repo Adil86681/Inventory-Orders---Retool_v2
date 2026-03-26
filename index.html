@@ -660,21 +660,17 @@
       <span class="search-icon">⌕</span>
       <input type="text" id="mgmt-search" placeholder="Search by order ID, org, warehouse, PO..." oninput="mgmtRenderTable()">
     </div>
-    <div class="ms-wrap" id="mgmt-warehouseWrap">
-      <button class="ms-trigger" id="mgmt-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('mgmt-warehouseMenu', this)">All Warehouses</button>
-      <div class="ms-dropdown" id="mgmt-warehouseMenu"></div>
+    <div class="search-wrap">
+      <span class="search-icon">⌦</span>
+      <input type="text" id="mgmt-filterWarehouse" placeholder="Filter warehouse..." oninput="mgmtRenderTable()">
     </div>
-    <div class="ms-wrap" id="mgmt-orgWrap">
-      <button class="ms-trigger" id="mgmt-orgTrigger" data-all-label="All Orgs" onclick="msToggle('mgmt-orgMenu', this)">All Orgs</button>
-      <div class="ms-dropdown" id="mgmt-orgMenu"></div>
+    <div class="search-wrap">
+      <span class="search-icon">⌦</span>
+      <input type="text" id="mgmt-filterOrg" placeholder="Filter org..." oninput="mgmtRenderTable()">
     </div>
-    <div class="ms-wrap" id="mgmt-statusWrap">
-      <button class="ms-trigger" id="mgmt-statusTrigger" data-all-label="All Statuses" onclick="msToggle('mgmt-statusMenu', this)">All Statuses</button>
-      <div class="ms-dropdown" id="mgmt-statusMenu">
-        <label class="ms-option"><input type="checkbox" value="PROCESSING" onchange="mgmtRenderTable()"> Processing</label>
-        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="mgmtRenderTable()"> Received in WH</label>
-        <label class="ms-option"><input type="checkbox" value="COMPLETED" onchange="mgmtRenderTable()"> Completed</label>
-      </div>
+    <div class="search-wrap">
+      <span class="search-icon">⌦</span>
+      <input type="text" id="mgmt-filterStatus" placeholder="Filter status..." oninput="mgmtRenderTable()">
     </div>
   </div>
 
@@ -917,7 +913,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Wire up static dropdowns (status menus); dynamic ones are wired after population
   wireMsCheckboxes(document.getElementById('inv-statusMenu'));
   wireMsCheckboxes(document.getElementById('cs-statusMenu'));
-  wireMsCheckboxes(document.getElementById('mgmt-statusMenu'));
   // Wire static inv warehouse menu
   wireMsCheckboxes(document.getElementById('inv-warehouseMenu'));
 });
@@ -1042,6 +1037,7 @@ function msOnChange(cb, allLabel) {
   msUpdateLabel(menu, trigger, allLabel);
   // trigger re-render for the right tab
   if (menu.id.startsWith('inv-')) invRenderTable();
+  else if (menu.id.startsWith('mgmt-')) mgmtRenderTable();
   else csRenderTable();
 }
 function invUpdateFilters() {
@@ -1531,22 +1527,15 @@ function mgmtUnreceive(id) {
   sheetsPush(MGMT_SHEET, id, { app_status: 'PROCESSING', received_at: '', comment: allComments[id] || '' });
 }
 
-function mgmtUpdateFilters() {
-  const whs = [...new Set(Object.values(mgmtOrders).map(o => o.warehouse).filter(Boolean))].sort();
-  msPopulateDynamic('mgmt-warehouseMenu', 'mgmt-warehouseTrigger', whs, 'All Warehouses');
-  const orgs = [...new Set(Object.values(mgmtOrders).map(o => o.org).filter(Boolean))].sort();
-  msPopulateDynamic('mgmt-orgMenu', 'mgmt-orgTrigger', orgs, 'All Orgs');
-}
-
-function mgmtGetFiltered() {
-  const search = document.getElementById('mgmt-search').value.toLowerCase();
-  const whs = [...document.querySelectorAll('#mgmt-warehouseMenu input:checked')].map(c => c.value);
-  const orgs = [...document.querySelectorAll('#mgmt-orgMenu input:checked')].map(c => c.value);
-  const statuses = [...document.querySelectorAll('#mgmt-statusMenu input:checked')].map(c => c.value);
+function mgmtRenderAll() { mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
+  const search  = (document.getElementById('mgmt-search').value || '').toLowerCase();
+  const whF     = (document.getElementById('mgmt-filterWarehouse').value || '').toLowerCase();
+  const orgF    = (document.getElementById('mgmt-filterOrg').value || '').toLowerCase();
+  const statusF = (document.getElementById('mgmt-filterStatus').value || '').toLowerCase();
   return Object.values(mgmtOrders).filter(o => {
-    if (whs.length && !whs.includes(o.warehouse)) return false;
-    if (orgs.length && !orgs.includes(o.org)) return false;
-    if (statuses.length && !statuses.includes(o.appStatus)) return false;
+    if (whF     && !(o.warehouse  || '').toLowerCase().includes(whF))     return false;
+    if (orgF    && !(o.org        || '').toLowerCase().includes(orgF))     return false;
+    if (statusF && !(MGMT_BADGE_LABELS[o.appStatus] || o.appStatus || '').toLowerCase().includes(statusF)) return false;
     if (search) {
       const hay = [o.order_id, o.org, o.warehouse, o.customer_po, o.submitter].join(' ').toLowerCase();
       if (!hay.includes(search)) return false;
@@ -1559,8 +1548,6 @@ function mgmtSortBy(col) {
   if (mgmtSortCol === col) mgmtSortDir *= -1; else { mgmtSortCol = col; mgmtSortDir = 1; }
   mgmtRenderTable();
 }
-
-function mgmtRenderAll() { mgmtUpdateFilters(); mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
 
 function mgmtRenderStats() {
   const all = Object.values(mgmtOrders); const total = all.length || 1;
@@ -1612,15 +1599,6 @@ function mgmtRenderTable() {
       <td>${btn}</td>
     </tr>`;
   }).join('');
-}
-
-// Wire MGMT status filter checkboxes
-function mgmtOnChange(cb, allLabel) {
-  const menu = cb.closest('.ms-dropdown');
-  const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
-  cb.closest('.ms-option').classList.toggle('checked', cb.checked);
-  msUpdateLabel(menu, trigger, allLabel);
-  mgmtRenderTable();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
