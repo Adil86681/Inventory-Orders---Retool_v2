@@ -1626,6 +1626,8 @@ function mgmtUnreceive(id) {
 }
 
 function mgmtRenderAll() { mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
+
+function mgmtGetFiltered() {
   const search  = (document.getElementById('mgmt-search').value || '').toLowerCase();
   const whF     = (document.getElementById('mgmt-filterWarehouse').value || '').toLowerCase();
   const orgF    = (document.getElementById('mgmt-filterOrg').value || '').toLowerCase();
