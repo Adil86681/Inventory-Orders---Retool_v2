@@ -288,6 +288,15 @@
   .ms-option:hover { background: var(--surface3); color: var(--text); }
   .ms-option input[type=checkbox] { accent-color: var(--accent); width: 13px; height: 13px; cursor: pointer; }
   .ms-option.checked { color: var(--text); }
+  .ms-search-wrap { padding: 6px 8px 4px; }
+  .ms-search-input {
+    width: 100%; background: var(--surface3); border: 1px solid var(--border);
+    border-radius: 5px; padding: 5px 9px; color: var(--text);
+    font-family: var(--sans); font-size: 12px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .ms-search-input:focus { border-color: var(--accent); }
+  .ms-option.hidden { display: none; }
   .ms-chip {
     display: inline-flex; align-items: center; gap: 3px;
     background: rgba(61,111,255,0.15); border: 1px solid rgba(61,111,255,0.25);
@@ -643,8 +652,6 @@
       <p>Processing · Coventry UK &amp; Germany EU · Live from Firstbase MGMT</p>
     </div>
     <div class="page-actions">
-      <button class="btn btn-primary" onclick="mgmtRefresh()">↻ Refresh from MGMT</button>
-      <button class="btn" style="background:var(--surface2);border-color:var(--border);color:var(--text2)" onclick="mgmtShowBookmarklet()">🔖 Bookmarklet</button>
       <button class="btn btn-danger" onclick="mgmtClearAll()">Clear All</button>
     </div>
   </div>
@@ -659,19 +666,28 @@
   <div class="controls">
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
-      <input type="text" id="mgmt-search" placeholder="Search by order ID, org, warehouse, PO..." oninput="mgmtRenderTable()">
+      <input type="text" id="mgmt-search" placeholder="Search by order ID, org, product, MPN..." oninput="mgmtRenderTable()">
     </div>
-    <div class="search-wrap">
-      <span class="search-icon">⌦</span>
-      <input type="text" id="mgmt-filterWarehouse" placeholder="Filter warehouse..." oninput="mgmtRenderTable()">
+    <div class="ms-wrap" id="mgmt-warehouseWrap">
+      <button class="ms-trigger" id="mgmt-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('mgmt-warehouseMenu', this)">All Warehouses</button>
+      <div class="ms-dropdown" id="mgmt-warehouseMenu">
+        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-warehouseMenu', this.value)"></div>
+      </div>
     </div>
-    <div class="search-wrap">
-      <span class="search-icon">⌦</span>
-      <input type="text" id="mgmt-filterOrg" placeholder="Filter org..." oninput="mgmtRenderTable()">
+    <div class="ms-wrap" id="mgmt-orgWrap">
+      <button class="ms-trigger" id="mgmt-orgTrigger" data-all-label="All Orgs" onclick="msToggle('mgmt-orgMenu', this)">All Orgs</button>
+      <div class="ms-dropdown" id="mgmt-orgMenu">
+        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-orgMenu', this.value)"></div>
+      </div>
     </div>
-    <div class="search-wrap">
-      <span class="search-icon">⌦</span>
-      <input type="text" id="mgmt-filterStatus" placeholder="Filter status..." oninput="mgmtRenderTable()">
+    <div class="ms-wrap" id="mgmt-statusWrap">
+      <button class="ms-trigger" id="mgmt-statusTrigger" data-all-label="All Statuses" onclick="msToggle('mgmt-statusMenu', this)">All Statuses</button>
+      <div class="ms-dropdown" id="mgmt-statusMenu">
+        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-statusMenu', this.value)"></div>
+        <label class="ms-option"><input type="checkbox" value="PROCESSING" onchange="mgmtOnFilterChange(this)"> Processing</label>
+        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="mgmtOnFilterChange(this)"> Received in WH</label>
+        <label class="ms-option"><input type="checkbox" value="COMPLETED" onchange="mgmtOnFilterChange(this)"> Completed</label>
+      </div>
     </div>
   </div>
 
@@ -701,7 +717,7 @@
     <div class="empty" id="mgmt-emptyState">
       <span class="empty-icon">🏢</span>
       <div class="empty-title">No MGMT orders to display</div>
-      Click Refresh from MGMT to load orders
+      No orders loaded
     </div>
   </div>
 </div>
@@ -713,6 +729,12 @@
 // ─── GOOGLE SHEETS CONFIG ────────────────────────────────────────────────────
 // Paste your deployed Apps Script Web App URL here:
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwS0DZkZpQx4vyNIrF9jIFfLn11nBDUBqNsMTU43_WY_g1CzhmIkGJJJMHHvKCBC0CaYw/exec';
+const MGMT_SHEET_ID   = '1iN9TeaadP4UPqOUrvUKRRkD4-CK3CLNncYQ-Xl2ohck';
+const MGMT_ORDERS_GID = '2126913381';
+const SKU_CATALOG_GID = '1220759584';
+function mgmtCsvUrl(gid) {
+  return `https://docs.google.com/spreadsheets/d/${MGMT_SHEET_ID}/export?format=csv&gid=${gid}`;
+}
 const INV_SHEET = 'InvOrderState';
 const CS_SHEET  = 'CSOrderState';
 
@@ -761,17 +783,6 @@ async function sheetsLoadAll() {
         }
       });
     }
-    // Merge mgmt state
-    if (json.mgmt) {
-      Object.entries(json.mgmt).forEach(([id, s]) => {
-        if (mgmtOrders[id]) {
-          if (s.app_status) mgmtOrders[id].appStatus = s.app_status;
-          if (s.received_at) mgmtOrders[id].receivedAt = s.received_at;
-          if (s.comment)  allComments[id] = s.comment;
-        }
-      });
-    }
-
     sheetsReady = true;
     setSyncStatus('ok', 'Synced');
     invSaveState(); csSaveState(); mgmtSaveState(); commentsSave();
@@ -1430,7 +1441,7 @@ function csRenderTable() {
 const MGMT_SHEET = 'MGMTOrders';
 
 // Seed data scraped from MGMT (Processing, non-SLC) — refreshed via bulkWrite on load
-const MGMT_SEED = [["ORD-260325-719C8869", "Mar 25, 2026 9:57 PM", "Discord", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 10-Core GPU 24GB RAM 512GB SSD - UK English KB - Midnight - UK Plug - 40W Dynamic Power Adapter with 60W Max", "", "", 3], ["ORD-260325-DCD50093", "Mar 25, 2026 6:28 PM", "Neo4j", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 64GB RAM 2TB SSD - UK English KB - Space Black - UK Plug - 140W", "", "", 5], ["ORD-260325-13574FFF", "Mar 25, 2026 6:28 PM", "Neo4j", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 40-Core GPU 64GB RAM 2TB SSD - UK English KB - Space Black - UK Plug - 140W", "Z1MN5M18406429W-UK", "", 4], ["ORD-260325-CFA57B4C", "Mar 25, 2026 6:25 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 2], ["ORD-260325-204EDA91", "Mar 25, 2026 6:21 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Pebble Keys 2 K380S Wireless Keyboard - British / Irish - Tonal Graphite", "920-011843", "76d16815-2fad-421a-ade1-b4acf1c9f00f", 17], ["ORD-260325-706ACC21", "Mar 25, 2026 6:20 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "M720 Wireless Mouse (UK/EU)", "", "", 14], ["ORD-260325-9786ECDC", "Mar 25, 2026 6:19 PM", "Neo4j", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 16GB RAM 512GB SSD - UK English KB - Midnight - Power Adapter Not Included", "MDVH4B/A", "8fc1a514-4297-47d2-91e3-c9c582b9f533", 5], ["ORD-260325-88B4DA00", "Mar 25, 2026 6:17 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Lift Ergonomic Wireless Mouse (Black)", "", "", 1], ["ORD-260325-988C0B92", "Mar 25, 2026 6:17 PM", "Sovos", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 16GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MDE14B/A", "ade9b99b-a4ee-49e0-975d-ad7c19fdd4ad", 2], ["ORD-260325-68070C22", "Mar 25, 2026 6:17 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "K860 Ergonomic Keyboard - British / Irish", "920-010107", "ff7cd35c-4dcf-4bf0-9be2-9e33f6c9af39", 1], ["ORD-260325-008EEF54", "Mar 25, 2026 6:16 PM", "Sovos", "Warehouse - Coventry UK", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 265U vPro Enterprise 32GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Aluminum Silver - Windows 11 Pro - UK/EU Plug", "T6MTV", "077e47b8-d4bc-47df-a978-5fc830fd57d9", 1], ["ORD-260325-E4A46250", "Mar 25, 2026 6:16 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "EarPods with 3.5mm Jack (UK/EU)", "MNHF2ZM/A", "", 15], ["ORD-260325-B933C555", "Mar 25, 2026 5:55 PM", "SeatGeek", "Warehouse - Coventry UK", "Processing", "", "ThinkPad X1 Carbon 14-inch (Gen 13) Ultra 7 255U 16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Black - Windows 11 Pro - UK Plug", "21NX007BUK", "d4acaf20-b98d-42b7-8470-ce3ec3142c72", 1], ["ORD-260323-B6978F63", "Mar 24, 2026 12:14 AM", "Mews", "Warehouse - Coventry UK", "Processing", "", "Pro 14 Premium 14-inch Ultra 5 238V vPro 32GB RAM 512GB SSD Touch Screen - Fingerprint Reader - UK English KB - Platinum - Windows 11 Pro, Copilot+ PC - UK Plug", "", "", 6], ["ORD-260323-5ABD659B", "Mar 23, 2026 9:41 PM", "Anyscale", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 16GB RAM 512GB SSD - UK English KB - Silver - Power Adapter Not Included", "MDV94B/A", "0acd50c6-68ba-4421-8209-5a7cfda125d9", 2], ["ORD-260320-952412F8", "Mar 20, 2026 10:09 PM", "Cority", "Warehouse - Coventry UK", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 265U vPro Enterprise 32GB RAM 1TB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Windows 11 Pro - UK Plug", "", "", 2], ["ORD-260320-F25C1604", "Mar 20, 2026 10:07 PM", "Cority", "Warehouse - Coventry UK", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 266V vPro Enterprise 16GB RAM 512GB SSD - Fingerprint Reader - Intel Arc Graphics - UK English KB - Platinum Silver - Windows 11 Pro, Copilot+ PC - UK Plug", "3400015146201.1-C", "663f5066-ede4-4a0c-a277-af6cc40b187d", 2], ["ORD-260320-49FA5160", "Mar 20, 2026 6:46 PM", "Sovos", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) Ultra 5 226V 16GB RAM 512GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro, Copilot+ PC - UK Plug", "21QG0078UK", "", 5], ["ORD-260319-301B6373", "Mar 19, 2026 7:19 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "YubiKey 5C Nano", "YBC246", "", 1], ["ORD-260319-3982F9C8", "Mar 19, 2026 7:19 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 5], ["ORD-260319-F60C7AAD", "Mar 19, 2026 7:18 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Syntech USB C to USB Adapter (2 Pack)", "MARK3_SML", "2326506d-7dc7-4b76-bf59-91fe8907c1e2", 4], ["ORD-260319-7EFFAAD0", "Mar 19, 2026 7:16 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Pebble Keys 2 K380S Wireless Keyboard - British / Irish - Tonal Graphite", "920-011843", "76d16815-2fad-421a-ade1-b4acf1c9f00f", 11], ["ORD-260319-87A3A394", "Mar 19, 2026 7:16 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "M720 Wireless Mouse (UK/EU)", "", "", 14], ["ORD-260319-722E9891", "Mar 19, 2026 7:16 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Lift Ergonomic Wireless Mouse (Black)", "", "", 1], ["ORD-260319-0DC0577B", "Mar 19, 2026 7:15 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "K860 Ergonomic Keyboard - British / Irish", "920-010107", "ff7cd35c-4dcf-4bf0-9be2-9e33f6c9af39", 2], ["ORD-260319-96D97EFC", "Mar 19, 2026 7:15 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Evolve 20 MS Stereo (USB-A/USB-C)", "4999-823-169", "af4eae68-6f38-46ab-88de-0bcdbb1fe7b4", 1], ["ORD-260319-9EDB5F78", "Mar 19, 2026 7:14 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "EarPods with 3.5mm Jack (UK/EU)", "MNHF2ZM/A", "", 12], ["ORD-260319-EBDE02CF", "Mar 19, 2026 7:14 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Anker USB-C 100W Charger (5 ft USB C to USB C Cable Included) - UK Plug", "B2672211", "315de65a-9776-4e2c-bcc5-3aebb74e08bd", 4], ["ORD-260319-1DB79851", "Mar 19, 2026 7:06 PM", "Corelight", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGEC4B/A", "ed5b4922-5894-43e4-bd72-fb4318cc6ffc", 2], ["ORD-260319-49FB698B", "Mar 19, 2026 6:40 PM", "Tailscale", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - UK English KB - Midnight - Power Adapter Not Included", "MDHG4B/A", "f257a0c6-69c6-4a6e-b842-732c93e416c8", 1], ["ORD-260319-7204D0A2", "Mar 19, 2026 6:33 PM", "Strava", "Warehouse - Coventry UK", "Processing", "", "U2724D UltraSharp 27\" Monitor", "U2724D", "", 1], ["ORD-260319-7CD6564D", "Mar 19, 2026 6:32 PM", "Strava", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 40-Core GPU 64GB RAM 2TB SSD - UK English KB - Space Black - UK Plug - 96W", "", "", 6], ["ORD-260319-FC1CCC53", "Mar 19, 2026 6:30 PM", "Strava", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - International English KB - Silver - UK Plug", "Z1L0510816514 WZK", "fc9b0bb2-1b25-45bf-8c4d-16afb702b7c7", 4], ["ORD-260318-990B2863", "Mar 18, 2026 7:03 PM", "Pacvue", "Warehouse - Coventry UK", "Processing", "", "ThinkPad X1 Carbon 14-inch (Gen 13) Ultra 7 255U 16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Black - Windows 11 Pro - UK Plug", "21NX007BUK", "d4acaf20-b98d-42b7-8470-ce3ec3142c72", 1], ["ORD-260318-2C52A2DE", "Mar 18, 2026 6:29 PM", "Postman", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - UK English KB - Midnight - Power Adapter Not Included", "MDVN4B/A", "77dc3eb8-6b92-433f-b78a-8eec76e857c4", 5], ["ORD-260318-314FBD01", "Mar 18, 2026 6:17 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "SD5920T Thunderbolt 4 Dock", "K35234EU", "62900f5e-9a63-462c-a628-4255880b2d11", 5], ["ORD-260318-AFFFB22F", "Mar 18, 2026 6:16 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 265U vPro Enterprise 32GB RAM 512GB SSD - No Fingerprint Reader - Intel Graphics - UK English KB - Windows 11 Pro - UK Plug", "", "", 3], ["ORD-260318-452A0135", "Mar 18, 2026 6:15 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - UK English KB - Silver - Power Adapter Not Included", "MDH74B/A", "50590cde-a5a4-488d-91bf-dbac49fb9fb4", 5], ["ORD-260318-ADC83F7D", "Mar 18, 2026 6:15 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "C920 HD Pro Webcam", "960-000770", "c13aa609-a0c0-4bc4-b652-05c48ac48bed", 1], ["ORD-260318-1B3723BC", "Mar 18, 2026 6:15 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "70W USB-C Power Adapter - UK Plug (Cable Not Included)", "MXN53B/A", "44b386d1-c02c-4256-80c5-219e3fd7ce20", 5], ["ORD-260318-8A00165F", "Mar 18, 2026 5:32 PM", "Kinsta", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGDR4B/A", "5bce6e3b-889d-4e98-bef6-6580a8fd669b", 1], ["ORD-260318-A56401B0", "Mar 18, 2026 5:32 PM", "Kinsta", "Warehouse - Coventry UK", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - UK English KB - Silver - Power Adapter Not Included", "MDH74B/A", "50590cde-a5a4-488d-91bf-dbac49fb9fb4", 1], ["ORD-260317-ECE32B5B", "Mar 17, 2026 8:09 PM", "Rithum", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - UK English KB - Silver - Power Adapter Not Included", "MGE64B/A", "fbbd60e8-62a4-4a3d-bb8b-25778855ab72", 5], ["ORD-260316-C340B056", "Mar 16, 2026 7:05 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 1], ["ORD-260316-827E9923", "Mar 16, 2026 7:04 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Pebble Keys 2 K380S Wireless Keyboard - British / Irish - Tonal Graphite", "920-011843", "76d16815-2fad-421a-ade1-b4acf1c9f00f", 5], ["ORD-260316-2EE7C8BA", "Mar 16, 2026 6:41 PM", "StackAdapt", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MDE34B/A", "92896d45-cba9-4deb-9332-2a85d338be05", 1], ["ORD-260313-B95EDBFC", "Mar 13, 2026 7:58 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Anker USB-C 100W Charger (5 ft USB C to USB C Cable Included) - UK Plug", "B2672211", "315de65a-9776-4e2c-bcc5-3aebb74e08bd", 42], ["ORD-260313-38702E7E", "Mar 13, 2026 7:57 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "", "", 40], ["ORD-260311-47FE679B", "Mar 11, 2026 7:29 PM", "Ramp", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 128GB RAM 2TB SSD - UK English KB - Space Black - UK Plug - 140W", "", "", 3], ["ORD-260311-D661EB1C", "Mar 11, 2026 7:29 PM", "Ramp", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - UK Plug - 96W", "", "", 3], ["ORD-260311-2C9E6E85", "Mar 11, 2026 7:28 PM", "Ramp", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 40-Core GPU 128GB RAM 2TB SSD - UK English KB - Space Black - UK Plug - 96W", "", "", 3], ["ORD-260311-D2502045", "Mar 11, 2026 7:27 PM", "Ramp", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 32GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "Z1KH51010321-70W-UK", "", 5], ["ORD-260311-73E5DD84", "Mar 11, 2026 6:39 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 1], ["ORD-260311-447E66F8", "Mar 11, 2026 6:36 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "Pebble Keys 2 K380S Wireless Keyboard - British / Irish - Tonal Graphite", "920-011843", "76d16815-2fad-421a-ade1-b4acf1c9f00f", 3], ["ORD-260309-A6186139", "Mar 9, 2026 5:49 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 2], ["ORD-260306-3E656C9A", "Mar 6, 2026 6:38 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 1], ["ORD-260303-A6F88C3A", "Mar 3, 2026 6:47 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 1], ["ORD-260302-4C3CCC8B", "Mar 3, 2026 2:28 AM", "Carta", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T1g 16-inch (Gen 8) Ultra 7 265H vPro Enterprise 32GB RAM 1TB SSD - Fingerprint Reader - NVIDIA RTX 5070 - UK English KB - Black - Windows 11 Pro - UK Plug", "21TD0024UK", "2ac8f204-b044-4b0a-9364-bccfa9dd2758", 1], ["ORD-260302-CBE33096", "Mar 2, 2026 7:13 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 2], ["ORD-260226-88AE76E9", "Feb 26, 2026 6:14 PM", "Benifex", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) Ultra 5 225U 16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Black - Windows 11 Pro - UK Plug", "", "", 1], ["ORD-260225-173E2DB6", "Feb 25, 2026 6:29 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "YubiKey 5C Nano", "YBC246", "", 2], ["ORD-260225-DB9B949D", "Feb 25, 2026 6:28 PM", "Wise", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 6) AMD Ryzen AI 5 Pro 340 32GB RAM 256GB SSD - Fingerprint Reader - UK English KB - Black - Windows 11 Pro - UK Plug", "21QKS37L00", "cd57bbb7-ad02-4e71-ab95-5e9103cc015f", 5], ["ORD-260223-4C3C38A4", "Feb 23, 2026 6:16 PM", "Postman", "Warehouse - Coventry UK", "Processing", "", "Curve for MacBooks and Laptops - Ergonomic desktop cooling stand (matte black)", "11370021607", "", 1], ["ORD-260220-009B2989", "Feb 21, 2026 12:40 AM", "Postman", "Warehouse - Coventry UK", "Processing", "", "Curve for MacBooks and Laptops - Ergonomic desktop cooling stand (matte black)", "11370021607", "", 1], ["ORD-260218-E2D2ADC5", "Feb 18, 2026 6:07 PM", "Postman", "Warehouse - Coventry UK", "Processing", "", "Curve Flex Adjustable Laptop Stand", "TS-2201", "356ace9b-9cde-4adc-af17-7de74ede9ce3", 1], ["ORD-260211-6F5C8FF1", "Feb 11, 2026 6:53 PM", "Harmonic Security", "Warehouse - Coventry UK", "Processing", "", "ThinkPad T14 14-inch (Gen 5) Ultra 7 155U 4.8 GHz 32GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Black - Windows 11 Pro - UK Plug", "21ML008XUK", "d914d337-9e37-4735-a21e-da6ddb2932db", 1], ["ORD-260204-8F655AEA", "Feb 4, 2026 9:56 PM", "Strava", "Warehouse - Coventry UK", "Processing", "", "MacBook Pro 14-inch M4 Max  16-Core CPU 40-Core GPU 64GB RAM 1TB SSD - UK English KB - Space Black - UK Plug", "Z1FE4M1640641-96W-UK", "7ace4118-d160-4710-9867-ee6bf1bf1906", 2], ["ORD-260325-52D29F57", "Mar 25, 2026 6:20 PM", "Neo4j", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 16GB RAM 512GB SSD - UK English KB - Midnight - Power Adapter Not Included", "MDVH4B/A", "8fc1a514-4297-47d2-91e3-c9c582b9f533", 4], ["ORD-260325-88965240", "Mar 25, 2026 6:19 PM", "Neo4j", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 16GB RAM 512GB SSD - Swedish KB - Midnight - Power Adapter Not Included", "MDVH4KS/A", "85339073-3512-4e3b-976a-fa2328113219", 2], ["ORD-260325-4A838E4C", "Mar 25, 2026 5:56 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - International English KB - Space Black - EU Plug - 140W", "Z1MZ5P182024 114WZKE", "", 3], ["ORD-260325-76FBE137", "Mar 25, 2026 5:56 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - International English KB - Space Black - EU Plug - 70W", "Z1ML5P1516241 7WZKE", "", 3], ["ORD-260325-79A5E114", "Mar 25, 2026 5:56 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - Danish KB - Midnight - EU Plug - 40W Dynamic Power Adapter with 60W Max", "Z1L6510816514 WDKKE", "", 3], ["ORD-260325-EB8DD638", "Mar 25, 2026 5:55 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - International English KB - Midnight - EU Plug - 40W Dynamic Power Adapter with 60W Max", "Z1L6510816514 WZKE", "", 3], ["ORD-260325-C6A990B4", "Mar 25, 2026 5:55 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - Danish KB - Space Black - EU Plug - 70W", "Z1ML5P1516241 7WDKKE", "", 3], ["ORD-260325-F74124FF", "Mar 25, 2026 5:54 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - Swedish KB - Space Black - EU Plug - 140W", "Z1MZ5P182024 114WSKE", "", 3], ["ORD-260325-61371DD5", "Mar 25, 2026 5:54 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - Swedish KB - Space Black - EU Plug - 70W", "Z1ML5P1516241 7WSKE", "", 3], ["ORD-260325-D7727990", "Mar 25, 2026 5:54 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - Swedish KB - Midnight - EU Plug - 40W Dynamic Power Adapter with 60W Max", "Z1L6510816514 WSKE", "", 3], ["ORD-260324-569A8D18", "Mar 25, 2026 1:55 AM", "Rithum", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 16GB RAM 1TB SSD - UK English KB - Silver - Power Adapter Not Included", "MDE54B/A", "15d51ab5-cea3-40ae-a891-6cf57b432374", 2], ["ORD-260324-D6873611", "Mar 24, 2026 6:45 AM", "Sovos", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - International English KB - Silver - Power Adapter Not Included", "MDVC4Z/A", "06c51d52-8019-4665-94a5-4d2af7c9bee0", 2], ["ORD-260324-21AFD062", "Mar 24, 2026 6:44 AM", "Sovos", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - UK English KB - Starlight - Power Adapter Not Included", "MDHA4B/A", "e0597fb1-dd34-47b8-9327-1a09dc843748", 5], ["ORD-260323-F35CD8A7", "Mar 24, 2026 1:47 AM", "Earnest Analytics", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - EU Plug - 70W", "Z1ML5P15164817W-70W", "", 2], ["ORD-260322-69624D3C", "Mar 23, 2026 2:53 AM", "Carta", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 64GB RAM 2TB SSD - International English KB - Space Black - EU Plug - 140W", "UNKNOWN-20260311-2956", "414b8c04-dc3f-4cea-a070-1bbd5975a4b0", 1], ["ORD-260320-A2E12025", "Mar 21, 2026 12:59 AM", "Tanium", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - Spanish KB - Silver - Power Adapter Not Included", "MGE64Y/A", "d50735e5-00fe-4c9c-91c3-b297281f00e8", 1], ["ORD-260319-C84673BC", "Mar 19, 2026 8:25 PM", "Sovos", "Warehouse - Germany EU", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 268V vPro Enterprise 32GB RAM 512GB SSD - Fingerprint Reader - Portuguese KB - Windows 11 Pro - EU Plug", "210-BPDN-32-PT", "66be3cad-1af1-4cea-8fd3-967b4c285d20", 8], ["ORD-260319-A01C2FAF", "Mar 19, 2026 8:25 PM", "Sovos", "Warehouse - Germany EU", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 266V vPro Enterprise 16GB RAM 512GB SSD - Fingerprint Reader - German KB - Windows 11 Pro - EU Plug", "PB14250-GEKB-2", "67f71934-032f-4fc9-ab89-cd9c8fd9dad2", 1], ["ORD-260319-621176E5", "Mar 19, 2026 8:24 PM", "Sovos", "Warehouse - Germany EU", "Processing", "", "Pro 14 Plus 14-inch Ultra 5 236V vPro Enterprise 16GB RAM 512GB SSD - Fingerprint Reader - Portuguese KB - Windows 11 Pro - EU Plug", "210-BPDN", "3168d53b-eeb9-4f97-8a4a-3f22eae3fc89", 10], ["ORD-260319-469EE5F2", "Mar 19, 2026 8:21 PM", "Digital.ai", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - US English KB - Space Black - EU Plug - 96W", "Z1ML5P18204819W", "14c5464c-877e-4edf-9173-b352b99ae373", 2], ["ORD-260319-5CA0FAD7", "Mar 19, 2026 6:47 PM", "Strava", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 64GB RAM 2TB SSD - International English KB - Space Black - EU Plug - 140W", "UNKNOWN-20260311-2956", "414b8c04-dc3f-4cea-a070-1bbd5975a4b0", 3], ["ORD-260319-84FD2C43", "Mar 19, 2026 6:46 PM", "Strava", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - International English KB - Silver - Power Adapter Not Included", "MDH74Z/A", "179ea2ce-872d-4ed2-8930-734850ff0b89", 4], ["ORD-260319-26CCAAC5", "Mar 19, 2026 6:08 PM", "Sysdig", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 32-Core GPU 36GB RAM 2TB SSD - US English KB - Space Black - EU Plug", "Z1MN5M18323629WLLKE", "f406bc18-c4c2-4337-b83e-51615205dd44", 2], ["ORD-260318-918E7368", "Mar 18, 2026 6:51 PM", "Typeform", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - UK English KB - Silver - Power Adapter Not Included", "MDH74B/A", "50590cde-a5a4-488d-91bf-dbac49fb9fb4", 2], ["ORD-260318-A79790E1", "Mar 18, 2026 6:41 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGEA4B/A", "c0eef22f-438a-4110-b022-8f0c2d1bb2e2", 10], ["ORD-260318-1541228C", "Mar 18, 2026 6:41 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - Spanish KB - Space Black - Power Adapter Not Included", "MGEA4Y/A", "f8ef65dd-52b2-4f6e-ba61-cafad6333dc9", 3], ["ORD-260318-D383A607", "Mar 18, 2026 6:41 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - Italian KB - Space Black - Power Adapter Not Included", "MGE44T/A", "5a856254-7d4f-4982-93b3-b9591affaf27", 3], ["ORD-260318-D8B4D460", "Mar 18, 2026 6:40 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - German KB - Silver - Power Adapter Not Included", "MGE44D/A", "b68b5239-df5a-40ff-b20a-820577e79c44", 3], ["ORD-260318-46871E6B", "Mar 18, 2026 6:40 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - French KB - Space Black - Power Adapter Not Included", "MGEA4FN/A", "cdb48951-5d81-484e-a6b8-1bec13f9d76e", 2], ["ORD-260318-FDC7AF43", "Mar 18, 2026 6:39 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGDR4B/A", "5bce6e3b-889d-4e98-bef6-6580a8fd669b", 10], ["ORD-260318-E6DDB130", "Mar 18, 2026 6:39 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - Spanish KB - Space Black - Power Adapter Not Included", "MGDR4Y/A", "7a69d61d-90cf-4cde-9bb7-8dfb6dbb11d3", 3], ["ORD-260318-D3C00055", "Mar 18, 2026 6:38 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - Italian KB - Space Black - Power Adapter Not Included", "MGDR4T/A", "d93cb9ea-21ce-482e-bd4f-64434d80600d", 3], ["ORD-260318-06AAD6B2", "Mar 18, 2026 6:38 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - German KB - Space Black - Power Adapter Not Included", "MGDR4D/A", "9cf5f909-c84d-4ca7-8e0a-c16da8da7ffc", 3], ["ORD-260318-03C4B696", "Mar 18, 2026 6:37 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - French KB - Space Black - Power Adapter Not Included", "MGDR4FN/A", "22cfcb1f-9605-44d3-8511-e2d11202c38d", 2], ["ORD-260318-DD5E7761", "Mar 18, 2026 6:37 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - UK English KB - Midnight - Power Adapter Not Included", "MDVN4B/A", "77dc3eb8-6b92-433f-b78a-8eec76e857c4", 10], ["ORD-260318-DEECB617", "Mar 18, 2026 6:36 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - Spanish KB - Midnight - Power Adapter Not Included", "MDVN4Y/A", "b9530255-45a6-498e-9871-d64727a48ae1", 3], ["ORD-260318-94471EB9", "Mar 18, 2026 6:36 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - Italian KB - Midnight - Power Adapter Not Included", "MDVN4T/A", "ae7f2e9c-f6ed-4a1a-8d01-363ea00ba9ae", 3], ["ORD-260318-A874C0AA", "Mar 18, 2026 6:35 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - German KB - Midnight - Power Adapter Not Included", "MDVN4D/A", "85382a28-8f31-4bd5-afde-fbcf8ded8933", 3], ["ORD-260318-B6E2212A", "Mar 18, 2026 6:34 PM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Air 15-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - French KB - Midnight - Power Adapter Not Included", "MDVN4FN/A", "5674ea71-ee5d-4c3f-bdec-a8f4e3665bd1", 3], ["ORD-260318-E5F626F7", "Mar 18, 2026 6:20 PM", "Rithum", "Warehouse - Germany EU", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 265U vPro Enterprise 32GB RAM 512GB SSD - No Fingerprint Reader - Intel Graphics - Spanish KB - Windows 11 Pro - EU Plug", "UNKNOWN-20251021-7388", "44300fa3-fe20-4b59-a5f4-28c1a6a2f6dc", 2], ["ORD-260318-EAADFC53", "Mar 18, 2026 6:19 PM", "Rithum", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - Spanish KB - Silver - Power Adapter Not Included", "MGE64Y/A", "d50735e5-00fe-4c9c-91c3-b297281f00e8", 5], ["ORD-260318-F95E7F49", "Mar 18, 2026 5:33 PM", "Kinsta", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 48GB RAM 1TB SSD - International English KB - Space Black - EU Plug - 70W", "UNKNOWN-20260316-8356", "24331c10-cafa-4574-9970-fc1eb89d9720", 1], ["ORD-260318-C53EAC06", "Mar 18, 2026 5:33 PM", "Kinsta", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - UK English KB - Silver - Power Adapter Not Included", "MDH74B/A", "50590cde-a5a4-488d-91bf-dbac49fb9fb4", 1], ["ORD-260317-94F63518", "Mar 18, 2026 12:53 AM", "Cresta", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 32-Core GPU 36GB RAM 2TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGDU4B/A", "e92b6af6-3f84-4790-a5f5-7aff07ded18c", 5], ["ORD-260317-D83FB521", "Mar 18, 2026 12:36 AM", "Velocity Global", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - International English KB - Silver - Power Adapter Not Included", "MDH74Z/A", "179ea2ce-872d-4ed2-8930-734850ff0b89", 1], ["ORD-260317-C146A54E", "Mar 17, 2026 3:04 PM", "Cover Genius", "Warehouse - Germany EU", "Processing", "", "ThinkPad X1 Carbon 14-inch (Gen 12) Ultra 7 155U  16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Black - Windows 11 Pro - EU Plug", "21KC005LUK-EU", "a1fc0626-47df-4669-9e7e-c67be16782be", 2], ["ORD-260317-442427B7", "Mar 17, 2026 7:33 AM", "Typeform", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGDR4B/A", "5bce6e3b-889d-4e98-bef6-6580a8fd669b", 2], ["ORD-260317-F42B001E", "Mar 17, 2026 6:15 AM", "Tanium", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - Spanish KB - Silver - Power Adapter Not Included", "MDH74Y/A", "3c8c71c7-e40b-4ed0-9868-67f20e9d7540", 2], ["ORD-260317-CD071089", "Mar 17, 2026 6:14 AM", "Tanium", "Warehouse - Germany EU", "Processing", "", "MacBook Air 13-inch M5 10-Core CPU 8-Core GPU 16GB RAM 512GB SSD - French KB - Silver - Power Adapter Not Included", "MDH74FN/A", "8c4da585-29fa-4819-9882-76da08073983", 5], ["ORD-260317-860E3D2F", "Mar 17, 2026 6:14 AM", "Tanium", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - French KB - Silver - Power Adapter Not Included", "MGE64FN/A", "a6e522f9-a432-4ac7-b30c-839bfb0c15c8", 1], ["ORD-260317-C6537182", "Mar 17, 2026 5:42 AM", "Cresta", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 48GB RAM 2TB SSD - US English KB - Space Black - Power Adapter Not Included", "MGEE4LL/A-EU", "c57ee611-bdf9-4aba-b4a0-8187e3408b50", 5], ["ORD-260312-F4B96B61", "Mar 13, 2026 4:49 AM", "Horizon3.ai", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 24GB RAM 1TB SSD - International English KB - Silver - Power Adapter Not Included", "Z1KL-1010241-INT", "91ee6b69-79fa-4325-8d4f-b5236e841a54", 1], ["ORD-260312-CAD311AA", "Mar 13, 2026 12:54 AM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - French KB - Space Black - Power Adapter Not Included", "MGDR4FN/A", "22cfcb1f-9605-44d3-8511-e2d11202c38d", 1], ["ORD-260312-0FE46FB1", "Mar 13, 2026 12:49 AM", "Postman", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 24GB RAM 1TB SSD - French KB - Space Black - Power Adapter Not Included", "MGEA4FN/A", "cdb48951-5d81-484e-a6b8-1bec13f9d76e", 1], ["ORD-260312-38D64CFF", "Mar 12, 2026 7:32 PM", "SentinelOne", "Warehouse - Germany EU", "Processing", "", "Pro Max 16 Plus UHD+ OLED (3840x2400) 16-inch Ultra 9 285HX vPro Enterprise 64GB RAM 2TB SSD Touch Screen - Fingerprint Reader - International English KB - Windows 11 Pro - EU Plug", "UNKNOWN-20251030-4497", "38b3b797-e7f9-4672-85ef-2cc67e914d2f", 1], ["ORD-260312-5DB8F9BE", "Mar 12, 2026 6:56 PM", "SentinelOne", "Warehouse - Germany EU", "Processing", "", "Pro Max 16 Plus UHD+ OLED (3840x2400) 16-inch Ultra 9 285HX vPro Enterprise 64GB RAM 2TB SSD Touch Screen - Fingerprint Reader - International English KB - Windows 11 Pro - EU Plug", "UNKNOWN-20251030-4497", "38b3b797-e7f9-4672-85ef-2cc67e914d2f", 1], ["ORD-260312-0B2CC6EB", "Mar 12, 2026 6:13 PM", "SentinelOne", "Warehouse - Germany EU", "Processing", "", "Pro Max 16 Plus UHD+ OLED (3840x2400) 16-inch Ultra 9 285HX vPro Enterprise 64GB RAM 2TB SSD Touch Screen - Fingerprint Reader - International English KB - Windows 11 Pro - EU Plug", "UNKNOWN-20251030-4497", "38b3b797-e7f9-4672-85ef-2cc67e914d2f", 3], ["ORD-260311-937C8B9C", "Mar 11, 2026 7:35 PM", "Ramp", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGEC4B/A", "ed5b4922-5894-43e4-bd72-fb4318cc6ffc", 3], ["ORD-260311-321A3292", "Mar 11, 2026 7:35 PM", "Ramp", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 16-inch M5 Max 18-Core CPU 40-Core GPU 128GB RAM 2TB SSD - UK English KB - Space Black - EU Plug - 140W", "UNKNOWN-20260311-7454", "c7ab92b5-25a9-4f10-84b7-f8012db2c4db", 3], ["ORD-260311-554563C6", "Mar 11, 2026 7:33 PM", "Ramp", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 18-Core CPU 20-Core GPU 48GB RAM 1TB SSD - UK English KB - Space Black - EU Plug - 96W", "UNKNOWN-20260311-7091", "8cee8f4a-9715-4636-a83b-89e61d65dec7", 3], ["ORD-260311-37E413FB", "Mar 11, 2026 7:33 PM", "Ramp", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Max 18-Core CPU 40-Core GPU 128GB RAM 2TB SSD - UK English KB - Space Black - EU Plug - 96W", "UNKNOWN-20260311-7712", "3fe56bc5-6f9b-4788-8eb9-e17ef3e11708", 3], ["ORD-260311-C996A5FE", "Mar 11, 2026 7:32 PM", "Ramp", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 10-Core CPU 10-Core GPU 32GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "Z1KH51010321-70W-UK", "", 5], ["ORD-260310-6987EDF4", "Mar 10, 2026 11:26 PM", "Horizon3.ai", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - UK English KB - Space Black - Power Adapter Not Included", "MGDR4B/A", "5bce6e3b-889d-4e98-bef6-6580a8fd669b", 4], ["ORD-260310-E69C728E", "Mar 10, 2026 11:21 PM", "Horizon3.ai", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M5 Pro 15-Core CPU 16-Core GPU 24GB RAM 1TB SSD - International English KB - Silver - Power Adapter Not Included", "MGDN4Z/A", "869598e1-a999-4a73-8658-d566013fc800", 2], ["ORD-260309-D83C0D8C", "Mar 9, 2026 5:29 PM", "Stack Overflow", "Warehouse - Germany EU", "Processing", "", "Pro Max 16 Premium 16-inch Ultra 9 285H vPro Enterprise 64GB RAM 1TB SSD Touch Screen - Fingerprint Reader - NVIDIA RTX Pro 2000 Blackwell 8GB GDDR7 - International English KB - Windows 11 Pro - EU Plug", "(MA16250) XCTO Base", "5db4891e-8e56-476d-b0b3-4a265f0c47b1", 1], ["ORD-260306-A822D1CD", "Mar 6, 2026 6:59 PM", "AppDirect", "Warehouse - Germany EU", "Processing", "", "MX Keys S Advanced Wireless Illuminated Keyboard - Graphite - US International English (UK/EU)", "920-011587", "34104c1e-2f57-4b70-b74c-1d6c0c5d2989", 5], ["ORD-260306-44E043B7", "Mar 6, 2026 6:59 PM", "AppDirect", "Warehouse - Germany EU", "Processing", "", "Logitech MX Keys Mini - International English", "920-010526", "8eb79a9c-1086-474c-983f-8e2b725e3664", 5], ["ORD-260305-4E1D8D86", "Mar 5, 2026 6:41 PM", "Typeform", "Warehouse - Germany EU", "Processing", "", "Pro 14 Plus 14-inch Ultra 7 265U vPro Enterprise 16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - UK English KB - Aluminum Silver - Windows 11 Pro - EU Plug", "93XNY-EU", "fb95b1c9-7fc5-49d6-a90e-4db69678b31a", 1], ["ORD-260302-77C8E7E1", "Mar 2, 2026 10:22 PM", "Docebo", "Warehouse - Germany EU", "Processing", "", "XPS 14 14-inch Ultra 7 355 16GB RAM 512GB SSD Touch Screen - No Fingerprint Reader - French KB - Graphite - Windows 11 Pro, Copilot+ PC - EU Plug", "3400019836525.1", "", 1], ["ORD-260226-F5FB4C85", "Feb 26, 2026 7:40 PM", "Neo4j", "Warehouse - Germany EU", "Processing", "", "MacBook Pro 14-inch M4 Max 16-Core CPU 40-Core GPU 64GB RAM 1TB SSD - Swedish KB - Space Black - EU Plug", "UNKNOWN-20250623-7520", "7c68d34a-b6f7-4fde-bc2f-158476addbd7", 1], ["ORD-260225-B719A037", "Feb 25, 2026 5:17 PM", "LastPass", "Warehouse - Germany EU", "Processing", "", "M650 Wireless Optical Performance Mouse", "910-001935", "34c30500-7719-4fae-9dc8-315276d2db5f", 1], ["ORD-260220-12A326B3", "Feb 20, 2026 6:34 PM", "Kraken Robotics", "Warehouse - Germany EU", "Processing", "", "ThinkPad L16 16-inch (Gen 2) Ultra 7 255U 16GB RAM 512GB SSD - Fingerprint Reader - Intel Graphics - German KB - Black - Windows 11 Pro - EU Plug", "21SACTO1WW", "8e849617-7269-4aed-b3b5-8f407f5e1666", 1], ["ORD-260220-835EA7D9", "Feb 20, 2026 5:42 PM", "Sovos", "Warehouse - Germany EU", "Processing", "", "ThinkPad T14 14-inch (Gen 6) Ultra 5 225U 16GB RAM 512GB SSD - Fingerprint Reader - US International KB - Black - Windows 11 Pro - EU Plug", "21QCCTO1WWLK", "7834c3d7-e184-4a67-af17-8ef7e2b8d37f", 1], ["ORD-260209-772D9CAD", "Feb 9, 2026 1:35 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "ThinkPad T14 14-inch (Gen 6) Ultra 7 255U 32GB RAM 1TB SSD - Fingerprint Reader - Danish KB - Black - Windows 11 Pro - EU Plug", "21QCS1JL00", "da0fbb78-993f-4fd1-b40f-3b8f04ebccf2", 2], ["ORD-260209-058C0583", "Feb 9, 2026 1:34 PM", "Benifex", "Warehouse - Germany EU", "Processing", "", "ThinkPad T14 14-inch (Gen 6) Ultra 7 255U 32GB RAM 1TB SSD - Fingerprint Reader - International English KB - Windows 11 Pro - EU Plug", "21QCCTO1WZK", "99fb63f9-ae83-4a05-81b7-d9576f748ea0", 2], ["ORD-260130-59A45910", "Jan 30, 2026 5:20 PM", "Abnormal.AI", "Warehouse - Germany EU", "Processing", "", "Surface Laptop 7 Copilot+ PC for Business 13.8-inch (7th Edition) Ultra 7 268V 32GB RAM 512GB SSD Touch Screen - German KB - Black - Windows 11 Pro - EU Plug", "EP2-22323", "f2ce6dc8-adfe-4094-bd16-7116ca9d8ce6", 2], ["ORD-260127-72E14B39", "Jan 27, 2026 10:45 PM", "Rithum", "Warehouse - Germany EU", "Processing", "", "TS5 Plus - Thunderbolt Station 5 Plus (EU)", "TBT5-TS5PLUS", "", 10]];
+const MGMT_SEED = [];
 
 // mgmtOrders: keyed by order_id
 let mgmtOrders = {};
@@ -1438,12 +1449,12 @@ let mgmtSortCol = 'created_date', mgmtSortDir = -1;
 
 function mgmtLoadState() {
   try {
-    const s = localStorage.getItem('inbound_tracker_mgmt_v1');
+    const s = localStorage.getItem('inbound_tracker_mgmt_v2');
     if (s) mgmtOrders = JSON.parse(s).orders || {};
   } catch(e) {}
 }
 function mgmtSaveState() {
-  try { localStorage.setItem('inbound_tracker_mgmt_v1', JSON.stringify({orders: mgmtOrders})); } catch(e) {}
+  try { localStorage.setItem('inbound_tracker_mgmt_v2', JSON.stringify({orders: mgmtOrders})); } catch(e) {}
 }
 function mgmtClearAll() {
   if (!confirm('Clear all MGMT orders? This will remove all local state.')) return;
@@ -1451,165 +1462,88 @@ function mgmtClearAll() {
   showToast('MGMT Orders cleared');
 }
 
-// Seed: load from MGMT_SEED on first open (when localStorage is empty)
-// Also bulkWrite seed to sheet so it persists for other users
-function mgmtSeedIfEmpty() {
-  if (Object.keys(mgmtOrders).length > 0) return;
-  const added = mgmtIngestRows(MGMT_SEED);
-  if (added > 0) {
-    // Push seed rows to sheet (works from file:// — no CORS block)
-    const rows = MGMT_SEED.filter(r => !(r[3]||'').includes('SLC')).map(r => [
-      r[0],'',r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8],String(r[9]||1)
+// ── MGMT LIVE LOAD FROM GOOGLE SHEETS ───────────────────────────────────────
+// Fetches MGMTOrders + SKU Catalog tabs directly via CSV export (no Apps Script needed)
+async function mgmtLoadFromSheets() {
+  setSyncStatus('syncing', 'Loading MGMT orders…');
+  try {
+    const [ordersRes, skuRes] = await Promise.all([
+      fetch(mgmtCsvUrl(MGMT_ORDERS_GID), { cache: 'no-store' }),
+      fetch(mgmtCsvUrl(SKU_CATALOG_GID),  { cache: 'no-store' })
     ]);
-    if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes('YOUR_APPS_SCRIPT')) {
-      fetch(APPS_SCRIPT_URL, {
-        method:'POST',
-        body: JSON.stringify({sheet:'MGMTOrders', action:'bulkWrite', rows})
-      }).catch(()=>{});
-    }
-  }
-}
+    if (!ordersRes.ok) throw new Error('MGMTOrders fetch failed: ' + ordersRes.status);
+    if (!skuRes.ok)    throw new Error('SKU Catalog fetch failed: ' + skuRes.status);
 
-// Ingest seed rows: [order_id, created_date, org, warehouse, mgmt_status, customer_po, product_title, mpn, sku_id, quantity]
-function mgmtIngestRows(rows) {
-  let added = 0;
-  rows.forEach(r => {
-    const id = r[0]; if (!id) return;
-    const warehouse = r[3] || '';
-    if (warehouse.includes('SLC')) return;
-    if (!mgmtOrders[id]) {
-      mgmtOrders[id] = {
-        order_id: r[0], created_date: r[1],
-        org: r[2], warehouse: r[3], mgmt_status: r[4], customer_po: r[5],
-        product_title: r[6] || '', mpn: r[7] || '', sku_id: r[8] || '', quantity: r[9] || 1,
-        appStatus: 'PROCESSING', addedAt: new Date().toISOString()
+    const [ordersText, skuText] = await Promise.all([ordersRes.text(), skuRes.text()]);
+
+    // Build MPN → {sku_id, description} map from SKU Catalog
+    // Expected columns: ITEM_Code, ITEM_DETAILED_DESCRIPTION, MPN_VENDOR_SKU, CATEGORY
+    const skuMap = {};
+    const skuRows = parseCSV(skuText);
+    skuRows.forEach(r => {
+      const mpn = (r['MPN_VENDOR_SKU'] || r['MPN'] || '').trim();
+      if (mpn) skuMap[mpn] = {
+        sku_id: (r['ITEM_Code'] || r['SKU ID'] || r['sku_id'] || '').trim(),
+        description: (r['ITEM_DETAILED_DESCRIPTION'] || r['Product Description'] || '').trim()
       };
-      added++;
-    }
-  });
-  mgmtSaveState();
-  return added;
-}
+    });
 
-// ── MGMT REFRESH ─────────────────────────────────────────────────────────────
-function mgmtRefresh() {
-  const btn = document.querySelector('button[onclick="mgmtRefresh()"]');
-  if (btn) { btn.disabled = true; btn.textContent = '\u21bb Fetching from sheet\u2026'; }
+    // Parse MGMTOrders
+    // Expected columns: Order ID, Created Date, Org, Warehouse, Status, Customer PO, Product Title, MPN, SKU ID, Quantity
+    const orderRows = parseCSV(ordersText);
+    let loaded = 0;
+    const newOrders = {};
+    orderRows.forEach(r => {
+      const id = (r['Order ID'] || r['order_id'] || '').trim();
+      if (!id) return;
+      const mpn = (r['MPN'] || r['mpn'] || '').trim();
 
-  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('YOUR_APPS_SCRIPT')) {
-    showToast('No Apps Script URL set');
-    if (btn) { btn.disabled = false; btn.textContent = '\u21bb Refresh from MGMT'; }
-    return;
-  }
-
-  fetch(APPS_SCRIPT_URL + '?sheet=mgmt', { cache: 'no-store' })
-    .then(function(r) { return r.json(); })
-    .then(function(json) {
-      if (!json.ok) throw new Error(json.error || 'Unknown error');
-      if (!json.mgmt || Object.keys(json.mgmt).length === 0) {
-        showToast('Sheet is empty \u2014 run the bookmarklet on MGMT first');
-        return;
+      // SKU enrichment: prefer sheet value, fallback to catalog lookup
+      let sku_id    = (r['SKU ID'] || r['sku_id'] || '').trim();
+      let prod_title = (r['Product Title'] || r['product_title'] || '').trim();
+      if (mpn && skuMap[mpn]) {
+        if (!sku_id)    sku_id    = skuMap[mpn].sku_id;
+        if (!prod_title) prod_title = skuMap[mpn].description;
       }
 
-      // Full replace: rebuild mgmtOrders from sheet, preserving local app_status/received_at/comments
-      var newOrders = {};
-      Object.entries(json.mgmt).forEach(function(entry) {
-        var id = entry[0], s = entry[1];
-        var existing = mgmtOrders[id];
-        newOrders[id] = {
-          order_id:     id,
-          created_date: s.created_date || '',
-          org:          s.org          || '',
-          warehouse:    s.warehouse    || '',
-          mgmt_status:  s.mgmt_status  || 'Processing',
-          customer_po:  s.customer_po  || '',
-          product_title: s.product_title || (existing && existing.product_title) || '',
-          mpn:           s.mpn || (existing && existing.mpn) || '',
-          sku_id:        s.sku_id || (existing && existing.sku_id) || '',
-          quantity:      s.quantity || (existing && existing.quantity) || 1,
-          appStatus:    (existing && existing.appStatus !== 'PROCESSING') ? existing.appStatus : (s.app_status || 'PROCESSING'),
-          receivedAt:   (existing && existing.receivedAt) ? existing.receivedAt : (s.received_at || ''),
-          addedAt:      (existing && existing.addedAt) ? existing.addedAt : new Date().toISOString()
-        };
-        if (s.comment && !allComments[id]) allComments[id] = s.comment;
-      });
-
-      var prevCount = Object.keys(mgmtOrders).length;
-      mgmtOrders = newOrders;
-      mgmtSaveState(); commentsSave();
-      mgmtRenderAll();
-
-      var newCount = Object.keys(mgmtOrders).length;
-      var diff = newCount - prevCount;
-      var diffStr = diff > 0 ? ' (+' + diff + ' new)' : diff < 0 ? ' (' + diff + ' removed)' : '';
-      document.getElementById('mgmt-lastRefresh').textContent =
-        'Last refresh: ' + new Date().toLocaleTimeString() + ' \u2014 ' + newCount + ' orders' + diffStr;
-      showToast('Refreshed \u2014 ' + newCount + ' orders loaded from sheet' + diffStr);
-    })
-    .catch(function(err) {
-      showToast('Fetch failed \u2014 run the bookmarklet on MGMT first, then try again');
-      console.warn('mgmtRefresh error:', err);
-    })
-    .finally(function() {
-      if (btn) { btn.disabled = false; btn.textContent = '\u21bb Refresh from MGMT'; }
+      const existing = mgmtOrders[id];
+      newOrders[id] = {
+        order_id:     id,
+        created_date: (r['Created Date'] || r['created_date'] || '').trim(),
+        org:          (r['Org'] || r['Organization'] || r['org'] || '').trim(),
+        warehouse:    (r['Warehouse'] || r['warehouse'] || '').trim(),
+        mgmt_status:  (r['Status'] || r['status'] || 'Processing').trim(),
+        customer_po:  (r['Customer PO'] || r['customer_po'] || '').trim(),
+        product_title: prod_title,
+        mpn:           mpn,
+        sku_id:        sku_id,
+        quantity:      parseInt(r['Quantity'] || r['quantity'] || '1', 10) || 1,
+        // Preserve local app_status if already actioned
+        appStatus:    (existing && existing.appStatus !== 'PROCESSING') ? existing.appStatus : 'PROCESSING',
+        receivedAt:   (existing && existing.receivedAt) || '',
+        addedAt:      (existing && existing.addedAt) || new Date().toISOString()
+      };
+      if (allComments[id] === undefined && existing && allComments[id]) allComments[id] = allComments[id];
+      loaded++;
     });
+
+    mgmtOrders = newOrders;
+    mgmtSaveState(); commentsSave();
+    mgmtRenderAll();
+
+    const ts = new Date().toLocaleTimeString();
+    document.getElementById('mgmt-lastRefresh').textContent = `Last refresh: ${ts} — ${loaded} orders`;
+    setSyncStatus('ok', 'Synced');
+    document.getElementById('lastUpdated').textContent =
+      `${Object.keys(invOrders).length} inventory + ${Object.keys(csOrders).length} customer supplied + ${loaded} MGMT orders loaded`;
+
+  } catch(err) {
+    setSyncStatus('error', 'MGMT load failed — check sheet access');
+    console.error('mgmtLoadFromSheets error:', err);
+    showToast('MGMT load failed — make sure the sheet is publicly accessible');
+  }
 }
 
-// Show the bookmarklet modal — drag once to bookmarks bar, click each time on MGMT
-function mgmtShowBookmarklet() {
-  var appsUrl = APPS_SCRIPT_URL;
-  var code = '(function(){'
-    + 'var rows=[];'
-    + 'document.querySelectorAll("table tbody tr").forEach(function(tr){'
-    + 'var c=tr.querySelectorAll("td");if(c.length<7)return;'
-    + 'var id=(c[0].querySelector("a")||c[0]).textContent.trim();'
-    + 'var lines=c[0].innerText.trim().split("\\n");'
-    + 'var sub=lines.length>1?lines.slice(1).join(" ").trim():"";'
-    + 'var wh=c[4].innerText.trim();if(wh.indexOf("SLC")>=0)return;'
-    + 'var po=c[7]?c[7].innerText.trim().replace("\\u2014","").trim():"";'
-    + 'rows.push([id,sub,c[1].innerText.trim().replace("\\n"," "),c[3].innerText.trim(),wh,c[6].innerText.trim(),po]);'
-    + '});'
-    + 'if(!rows.length){alert("No rows found. Make sure the MGMT Inventory Orders page is loaded with Status: Processing filter applied.");return;}'
-    + 'var sheetRows=rows.map(function(r){return[r[0],r[1],r[2],r[3],r[4],r[5],r[6],"PROCESSING","","",""];});'
-    + 'fetch("' + appsUrl + '",{method:"POST",mode:"no-cors",body:JSON.stringify({sheet:"MGMTOrders",action:"bulkWrite",rows:sheetRows})});'
-    + 'alert("Sent "+rows.length+" orders to sheet. Now go back to the tracker and click Refresh.");'
-    + '})();';
-
-  var href = 'javascript:' + encodeURIComponent(code);
-
-  var existing = document.getElementById('mgmt-bm-modal');
-  if (existing) existing.remove();
-
-  var modal = document.createElement('div');
-  modal.id = 'mgmt-bm-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center';
-  modal.innerHTML = '<div style="background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:28px;max-width:500px;width:92%;font-family:var(--sans)">'
-    + '<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">\uD83D\uDD16 MGMT Refresh Bookmarklet</div>'
-    + '<p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:6px"><strong>Setup (once):</strong> Drag the button below to your bookmarks bar.</p>'
-    + '<p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:18px"><strong>Each refresh:</strong> Go to the MGMT Inventory Orders page with your filters applied, click the bookmarklet, then come back here and click <em>Refresh from MGMT</em>.</p>'
-    + '<div style="text-align:center;margin-bottom:18px">'
-    + '<a id="mgmt-bm-link" href="' + href + '" draggable="true" style="display:inline-block;padding:11px 24px;background:var(--accent);color:#fff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;cursor:grab;user-select:none">'
-    + '\uD83D\uDCE4 Send MGMT Orders to Sheet'
-    + '</a>'
-    + '</div>'
-    + '<p style="font-size:11px;color:var(--muted);margin-bottom:18px">Can\'t drag? Right-click the button \u2192 "Bookmark this link".</p>'
-    + '<button onclick="document.getElementById(\'mgmt-bm-modal\').remove()" style="width:100%;padding:9px;border-radius:7px;border:1px solid var(--border);background:var(--surface3);color:var(--text2);cursor:pointer;font-size:13px;font-family:var(--sans)">Close</button>'
-    + '</div>';
-  document.body.appendChild(modal);
-  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
-}
-
-// Merge state from Sheets (app_status, received_at, comment)
-function mgmtMergeSheetState(sheetMap) {
-  Object.entries(sheetMap).forEach(([id, s]) => {
-    if (mgmtOrders[id]) {
-      if (s.app_status) mgmtOrders[id].appStatus = s.app_status;
-      if (s.received_at) mgmtOrders[id].receivedAt = s.received_at;
-      if (s.comment) allComments[id] = s.comment;
-    }
-  });
-  mgmtSaveState(); commentsSave();
-}
 
 function mgmtMarkReceived(id) {
   if (!mgmtOrders[id]) return;
@@ -1634,17 +1568,65 @@ function mgmtUnreceive(id) {
   sheetsPush(MGMT_SHEET, id, { app_status: 'PROCESSING', received_at: '', comment: allComments[id] || '' });
 }
 
-function mgmtRenderAll() { mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
+// ── MGMT DROPDOWN FILTERS ────────────────────────────────────────────────────
+function mgmtPopulateDropdowns() {
+  const whs  = [...new Set(Object.values(mgmtOrders).map(o => o.warehouse).filter(Boolean))].sort();
+  const orgs = [...new Set(Object.values(mgmtOrders).map(o => o.org).filter(Boolean))].sort();
+  mgmtPopulateMenu('mgmt-warehouseMenu', 'mgmt-warehouseTrigger', whs, 'All Warehouses');
+  mgmtPopulateMenu('mgmt-orgMenu',       'mgmt-orgTrigger',       orgs,'All Orgs');
+  // Status menu is static — just wire checkboxes
+  wireMsCheckboxes(document.getElementById('mgmt-statusMenu'));
+}
+
+function mgmtPopulateMenu(menuId, triggerId, values, allLabel) {
+  const menu    = document.getElementById(menuId);
+  const trigger = document.getElementById(triggerId);
+  // Preserve search input, remove old options only
+  [...menu.querySelectorAll('.ms-option')].forEach(el => el.remove());
+  values.forEach(val => {
+    const label = document.createElement('label');
+    label.className = 'ms-option';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = val;
+    cb.addEventListener('change', () => {
+      label.classList.toggle('checked', cb.checked);
+      msUpdateLabel(menu, trigger, allLabel);
+      mgmtRenderTable();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + val.replace('Warehouse - ', '')));
+    menu.appendChild(label);
+  });
+}
+
+function mgmtOnFilterChange(cb) {
+  cb.closest('.ms-option').classList.toggle('checked', cb.checked);
+  const menu    = cb.closest('.ms-dropdown');
+  const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
+  msUpdateLabel(menu, trigger, trigger.dataset.allLabel || 'All');
+  mgmtRenderTable();
+}
+
+function mgmtFilterDropdown(menuId, query) {
+  const menu = document.getElementById(menuId);
+  const q = query.toLowerCase();
+  menu.querySelectorAll('.ms-option').forEach(opt => {
+    const text = opt.textContent.trim().toLowerCase();
+    opt.classList.toggle('hidden', q.length > 0 && !text.includes(q));
+  });
+}
+
+function mgmtRenderAll() { mgmtPopulateDropdowns(); mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
 
 function mgmtGetFiltered() {
-  const search  = (document.getElementById('mgmt-search').value || '').toLowerCase();
-  const whF     = (document.getElementById('mgmt-filterWarehouse').value || '').toLowerCase();
-  const orgF    = (document.getElementById('mgmt-filterOrg').value || '').toLowerCase();
-  const statusF = (document.getElementById('mgmt-filterStatus').value || '').toLowerCase();
+  const search   = (document.getElementById('mgmt-search').value || '').toLowerCase();
+  const whVals   = [...document.querySelectorAll('#mgmt-warehouseMenu input:checked')].map(c => c.value);
+  const orgVals  = [...document.querySelectorAll('#mgmt-orgMenu input:checked')].map(c => c.value);
+  const statVals = [...document.querySelectorAll('#mgmt-statusMenu input:checked')].map(c => c.value);
   return Object.values(mgmtOrders).filter(o => {
-    if (whF     && !(o.warehouse  || '').toLowerCase().includes(whF))     return false;
-    if (orgF    && !(o.org        || '').toLowerCase().includes(orgF))     return false;
-    if (statusF && !(MGMT_BADGE_LABELS[o.appStatus] || o.appStatus || '').toLowerCase().includes(statusF)) return false;
+    if (whVals.length  && !whVals.includes(o.warehouse || ''))   return false;
+    if (orgVals.length && !orgVals.includes(o.org || ''))        return false;
+    if (statVals.length && !statVals.includes(o.appStatus || '')) return false;
     if (search) {
       const hay = [o.order_id, o.org, o.warehouse, o.customer_po, o.product_title, o.mpn].join(' ').toLowerCase();
       if (!hay.includes(search)) return false;
@@ -1719,13 +1701,13 @@ function mgmtRenderTable() {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 invLoadState(); csLoadState(); mgmtLoadState(); commentsLoad();
-mgmtSeedIfEmpty();
 invRenderAll(); csRenderAll(); mgmtRenderAll();
-const invN = Object.keys(invOrders).length, csN = Object.keys(csOrders).length, mgmtN = Object.keys(mgmtOrders).length;
-if (invN > 0 || csN > 0 || mgmtN > 0)
-  document.getElementById('lastUpdated').textContent = `${invN} inventory + ${csN} customer supplied + ${mgmtN} MGMT orders loaded`;
-// Load Sheets state and merge on top of local
+const invN = Object.keys(invOrders).length, csN = Object.keys(csOrders).length;
+if (invN > 0 || csN > 0)
+  document.getElementById('lastUpdated').textContent = `${invN} inventory + ${csN} customer supplied — loading MGMT…`;
+// Load Inv/CS state from Apps Script, and MGMT orders live from sheet
 sheetsLoadAll();
+mgmtLoadFromSheets();
 </script>
 </body>
 </html>
