@@ -465,6 +465,31 @@
   td.ps-cat-cell { font-family: var(--mono); font-size: 11px; }
   .ps-highlight { background: rgba(61,111,255,0.2); border-radius: 2px; color: var(--accent2); padding: 0 1px; }
 
+  /* Expandable grouped rows */
+  .expand-toggle {
+    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 11px; color: var(--accent2);
+    background: none; border: none; padding: 0; user-select: none;
+  }
+  .expand-toggle:hover { color: var(--text); }
+  .expand-arrow {
+    display: inline-block; transition: transform 0.2s; font-size: 10px;
+  }
+  .expand-arrow.open { transform: rotate(90deg); }
+  .item-count-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-family: var(--mono); font-weight: 600;
+    background: rgba(61,111,255,0.1); border: 1px solid rgba(61,111,255,0.2);
+    color: var(--accent2); padding: 1px 7px; border-radius: 20px;
+    margin-left: 6px;
+  }
+  .child-row { background: var(--surface2); }
+  .child-row:hover { background: var(--surface3) !important; }
+  .child-row td { padding: 7px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .child-row td:first-child { padding-left: 32px; }
+  .child-indent { color: var(--muted); margin-right: 4px; }
+  .child-row .badge { font-size: 10px; padding: 2px 7px; }
+
   .comment-cell { min-width: 140px; max-width: 200px; }
   .comment-input {
     width: 100%; background: transparent; border: 1px solid transparent;
@@ -501,9 +526,6 @@
   <button class="tab-btn" onclick="switchTab('cs')" id="tabBtn-cs">
     🚚 Customer Supplied Orders <span class="tab-count" id="tabCount-cs">0</span>
   </button>
-  <button class="tab-btn" onclick="switchTab('mgmt')" id="tabBtn-mgmt">
-    🏢 Inventory Orders - MGMT <span class="tab-count" id="tabCount-mgmt">0</span>
-  </button>
   <button class="tab-btn" onclick="switchTab('search')" id="tabBtn-search">
     🔍 Product Search <span class="tab-count" id="tabCount-search">0</span>
   </button>
@@ -525,12 +547,12 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-label">Total Open</div><div class="stat-value c-text" id="inv-statTotal">0</div><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:var(--border2)"></div></div></div>
-    <div class="stat"><div class="stat-label">Ordered</div><div class="stat-value c-accent" id="inv-statOrdered">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barOrdered" style="width:0%;background:var(--accent)"></div></div></div>
-    <div class="stat"><div class="stat-label">Processing</div><div class="stat-value c-purple" id="inv-statProcessing">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barProcessing" style="width:0%;background:var(--purple)"></div></div></div>
+    <div class="stat"><div class="stat-label">Total Orders</div><div class="stat-value c-text" id="inv-statTotal">0</div><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:var(--border2)"></div></div></div>
+    <div class="stat"><div class="stat-label">Pending</div><div class="stat-value c-accent" id="inv-statPending">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barPending" style="width:0%;background:var(--accent)"></div></div></div>
+    <div class="stat"><div class="stat-label">Ordered</div><div class="stat-value c-purple" id="inv-statOrdered">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barOrdered" style="width:0%;background:var(--purple)"></div></div></div>
     <div class="stat"><div class="stat-label">Shipped</div><div class="stat-value c-amber" id="inv-statShipped">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barShipped" style="width:0%;background:var(--amber)"></div></div></div>
-    <div class="stat"><div class="stat-label">Received in WH</div><div class="stat-value c-green" id="inv-statReceived">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barReceived" style="width:0%;background:var(--green)"></div></div></div>
-    <div class="stat"><div class="stat-label">Completed</div><div class="stat-value c-green" id="inv-statCompleted">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barCompleted" style="width:0%;background:var(--green)"></div></div></div>
+    <div class="stat"><div class="stat-label">At Facility</div><div class="stat-value c-green" id="inv-statFacility">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barFacility" style="width:0%;background:var(--green)"></div></div></div>
+    <div class="stat"><div class="stat-label">Cancelled</div><div class="stat-value c-red" id="inv-statCancelled">0</div><div class="stat-bar"><div class="stat-bar-fill" id="inv-barCancelled" style="width:0%;background:var(--red)"></div></div></div>
   </div>
 
   <div class="upload-area" id="invDropZone"
@@ -564,7 +586,7 @@
       </div>
     </div>
     <div class="ms-wrap" id="inv-categoryWrap">
-      <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Categories" onclick="msToggle('inv-categoryMenu', this)">All Categories</button>
+      <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Brands" onclick="msToggle('inv-categoryMenu', this)">All Brands</button>
       <div class="ms-dropdown" id="inv-categoryMenu"></div>
     </div>
     <div class="ms-wrap" id="inv-customerWrap">
@@ -574,11 +596,13 @@
     <div class="ms-wrap" id="inv-statusWrap">
       <button class="ms-trigger" id="inv-statusTrigger" data-all-label="All Statuses" onclick="msToggle('inv-statusMenu', this)">All Statuses</button>
       <div class="ms-dropdown" id="inv-statusMenu">
+        <label class="ms-option"><input type="checkbox" value="PENDING" onchange="invRenderTable()"> Pending</label>
         <label class="ms-option"><input type="checkbox" value="ORDERED" onchange="invRenderTable()"> Ordered</label>
-        <label class="ms-option"><input type="checkbox" value="PROCESSING" onchange="invRenderTable()"> Processing</label>
         <label class="ms-option"><input type="checkbox" value="SHIPPED" onchange="invRenderTable()"> Shipped</label>
-        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="invRenderTable()"> Received in WH</label>
-        <label class="ms-option"><input type="checkbox" value="COMPLETED" onchange="invRenderTable()"> Completed</label>
+        <label class="ms-option"><input type="checkbox" value="ARRIVED_AT_PROCESSING_FACILITY" onchange="invRenderTable()"> At Facility</label>
+        <label class="ms-option"><input type="checkbox" value="OUT_FOR_DELIVERY" onchange="invRenderTable()"> Out for Delivery</label>
+        <label class="ms-option"><input type="checkbox" value="PARTIALLY_SHIPPED" onchange="invRenderTable()"> Partially Shipped</label>
+        <label class="ms-option"><input type="checkbox" value="CANCELLED" onchange="invRenderTable()"> Cancelled</label>
       </div>
     </div>
   </div>
@@ -592,18 +616,16 @@
       <table>
         <thead><tr>
           <th class="check-cell"><input type="checkbox" class="row-check" id="inv-checkAll" onchange="invToggleAll(this.checked)" title="Select all"></th>
-          <th onclick="invSortBy('inventory_order_id')">Order ID</th>
-          <th onclick="invSortBy('organization_name')">Customer</th>
-          <th>Copy</th>
+          <th onclick="invSortBy('friendly_order_id')">Order ID</th>
+          <th onclick="invSortBy('organization')">Customer</th>
           <th onclick="invSortBy('product_title')">Product</th>
-          <th onclick="invSortBy('quantity')">Qty</th>
-          <th onclick="invSortBy('warehouse_name')">Warehouse</th>
-          <th onclick="invSortBy('purchase_number')">PO Number</th>
+          <th>Copy</th>
+          <th onclick="invSortBy('totalQty')">Qty</th>
+          <th onclick="invSortBy('warehouse')">Warehouse</th>
+          <th onclick="invSortBy('po_number')">PO Number</th>
           <th>Tracking</th>
-          <th onclick="invSortBy('appStatus')">Status</th>
-          <th onclick="invSortBy('created_at')">Created</th>
-          <th>Comments</th>
-          <th>Action</th>
+          <th onclick="invSortBy('itemStatus')">Status</th>
+          <th onclick="invSortBy('created_date')">Created</th>
           <th>Retool</th>
         </tr></thead>
         <tbody id="inv-tableBody"></tbody>
@@ -708,87 +730,6 @@
 </div>
 </div>
 
-<!-- ═══ INVENTORY ORDERS - MGMT TAB ═══ -->
-<div class="tab-panel" id="panel-mgmt">
-<div class="app">
-  <div class="page-header">
-    <div class="page-title">
-      <h1>Inventory Orders - MGMT</h1>
-      <p>Processing · Coventry UK &amp; Germany EU · Live from Firstbase MGMT</p>
-    </div>
-    <div class="page-actions">
-      <button class="btn btn-danger" onclick="mgmtClearAll()">Clear All</button>
-    </div>
-  </div>
-
-  <div class="stats">
-    <div class="stat"><div class="stat-label">Total</div><div class="stat-value c-text" id="mgmt-statTotal">0</div><div class="stat-bar"><div class="stat-bar-fill" style="width:100%;background:var(--border2)"></div></div></div>
-    <div class="stat"><div class="stat-label">Processing</div><div class="stat-value c-purple" id="mgmt-statProcessing">0</div><div class="stat-bar"><div class="stat-bar-fill" id="mgmt-barProcessing" style="width:0%;background:var(--purple)"></div></div></div>
-    <div class="stat"><div class="stat-label">Received in WH</div><div class="stat-value c-green" id="mgmt-statReceived">0</div><div class="stat-bar"><div class="stat-bar-fill" id="mgmt-barReceived" style="width:0%;background:var(--green)"></div></div></div>
-    <div class="stat"><div class="stat-label">Completed</div><div class="stat-value c-green" id="mgmt-statCompleted">0</div><div class="stat-bar"><div class="stat-bar-fill" id="mgmt-barCompleted" style="width:0%;background:var(--green)"></div></div></div>
-  </div>
-
-  <div class="controls">
-    <div class="search-wrap">
-      <span class="search-icon">⌕</span>
-      <input type="text" id="mgmt-search" placeholder="Search by order ID, org, product, MPN..." oninput="mgmtRenderTable()">
-    </div>
-    <div class="ms-wrap" id="mgmt-warehouseWrap">
-      <button class="ms-trigger" id="mgmt-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('mgmt-warehouseMenu', this)">All Warehouses</button>
-      <div class="ms-dropdown" id="mgmt-warehouseMenu">
-        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-warehouseMenu', this.value)"></div>
-      </div>
-    </div>
-    <div class="ms-wrap" id="mgmt-orgWrap">
-      <button class="ms-trigger" id="mgmt-orgTrigger" data-all-label="All Orgs" onclick="msToggle('mgmt-orgMenu', this)">All Orgs</button>
-      <div class="ms-dropdown" id="mgmt-orgMenu">
-        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-orgMenu', this.value)"></div>
-      </div>
-    </div>
-    <div class="ms-wrap" id="mgmt-statusWrap">
-      <button class="ms-trigger" id="mgmt-statusTrigger" data-all-label="All Statuses" onclick="msToggle('mgmt-statusMenu', this)">All Statuses</button>
-      <div class="ms-dropdown" id="mgmt-statusMenu">
-        <div class="ms-search-wrap"><input class="ms-search-input" type="text" placeholder="Search…" oninput="mgmtFilterDropdown('mgmt-statusMenu', this.value)"></div>
-        <label class="ms-option"><input type="checkbox" value="PROCESSING" onchange="mgmtOnFilterChange(this)"> Processing</label>
-        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="mgmtOnFilterChange(this)"> Received in WH</label>
-        <label class="ms-option"><input type="checkbox" value="COMPLETED" onchange="mgmtOnFilterChange(this)"> Completed</label>
-      </div>
-    </div>
-  </div>
-
-  <div class="table-wrap">
-    <div class="table-toolbar">
-      <div class="table-toolbar-left">Orders <span class="count-badge" id="mgmt-rowCount">0</span></div>
-      <div class="table-toolbar-right" id="mgmt-lastRefresh"></div>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th onclick="mgmtSortBy('order_id')">Order ID</th>
-          <th onclick="mgmtSortBy('created_date')">Created Date</th>
-          <th onclick="mgmtSortBy('org')">Organization</th>
-          <th onclick="mgmtSortBy('warehouse')">Warehouse</th>
-          <th onclick="mgmtSortBy('product_title')">Product</th>
-          <th>Copy</th>
-          <th onclick="mgmtSortBy('mpn')">MPN</th>
-          <th onclick="mgmtSortBy('quantity')">Qty</th>
-          <th onclick="mgmtSortBy('appStatus')">Status</th>
-          <th onclick="mgmtSortBy('customer_po')">Customer PO</th>
-          <th>Comments</th>
-          <th>Action</th>
-        </tr></thead>
-        <tbody id="mgmt-tableBody"></tbody>
-      </table>
-    </div>
-    <div class="empty" id="mgmt-emptyState">
-      <span class="empty-icon">🏢</span>
-      <div class="empty-title">No MGMT orders to display</div>
-      No orders loaded
-    </div>
-  </div>
-</div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <!-- ═══ PRODUCT SEARCH TAB ═══ -->
@@ -875,11 +816,7 @@
 // Paste your deployed Apps Script Web App URL here:
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwS0DZkZpQx4vyNIrF9jIFfLn11nBDUBqNsMTU43_WY_g1CzhmIkGJJJMHHvKCBC0CaYw/exec';
 const MGMT_SHEET_ID   = '1iN9TeaadP4UPqOUrvUKRRkD4-CK3CLNncYQ-Xl2ohck';
-const MGMT_ORDERS_GID = '2126913381';
 const SKU_CATALOG_GID = '1220759584';
-function mgmtCsvUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/${MGMT_SHEET_ID}/export?format=csv&gid=${gid}`;
-}
 const INV_SHEET = 'InvOrderState';
 const CS_SHEET  = 'CSOrderState';
 
@@ -930,8 +867,8 @@ async function sheetsLoadAll() {
     }
     sheetsReady = true;
     setSyncStatus('ok', 'Synced');
-    invSaveState(); csSaveState(); mgmtSaveState(); commentsSave();
-    invRenderAll(); csRenderAll(); mgmtRenderAll();
+    invSaveState(); csSaveState(); commentsSave();
+    invRenderAll(); csRenderAll();
   } catch(err) {
     setSyncStatus('error', 'Sheets error — using local');
     console.error('Sheets load error:', err);
@@ -1101,87 +1038,9 @@ function updateTabCounts() {
   document.getElementById('tabCount-inv').textContent = Object.keys(invOrders).length;
   const csPOs = new Set(Object.values(csOrders).map(o=>o.purchase_order_number||o.shipment_notice_package_item_id));
   document.getElementById('tabCount-cs').textContent = csPOs.size;
-  document.getElementById('tabCount-mgmt').textContent = Object.keys(mgmtOrders).length;
 }
 
 // ─── INVENTORY ORDERS ────────────────────────────────────────────────────────
-const INV_ALLOWED_WH    = new Set(['Warehouse - Coventry UK','Warehouse - Germany EU','Warehouse - Oshawa CAN']);
-const INV_SKIP_STATUSES = new Set(['COMPLETE','COMPLETED','CANCELLED']);
-
-let invOrders  = {};
-let invSortCol = 'created_at', invSortDir = -1;
-let invNewIds  = new Set();
-
-function invLoadState()  { try { const s=localStorage.getItem('inbound_tracker_inv_v1'); if(s) invOrders=JSON.parse(s).orders||{}; } catch(e){} }
-function invSaveState()  { try { localStorage.setItem('inbound_tracker_inv_v1', JSON.stringify({orders:invOrders})); } catch(e){} }
-function invClearAll()   {
-  if (!confirm('Clear all Inventory Orders?')) return;
-  invOrders={}; invNewIds.clear(); invSaveState(); invRenderAll();
-  showToast('Inventory Orders cleared');
-}
-function invHandleDrop(e) { e.preventDefault(); document.getElementById('invDropZone').classList.remove('drag'); const f=e.dataTransfer.files[0]; if(f) invProcessFile(f); }
-function invHandleFile(e) { const f=e.target.files[0]; if(f) invProcessFile(f); e.target.value=''; }
-function invProcessFile(file) {
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    const rows = parseCSV(ev.target.result);
-    let added=0; invNewIds.clear();
-    rows.forEach(row => {
-      const id = row.inventory_order_id; if (!id) return;
-      const wh = row.warehouse_name||'';
-      const status = (row.status||'').toUpperCase();
-      if (!INV_ALLOWED_WH.has(wh)) return;
-      if (INV_SKIP_STATUSES.has(status)) { if(invOrders[id]) delete invOrders[id]; return; }
-      if (!invOrders[id]) {
-        invOrders[id] = {...row, status, appStatus:status, addedAt:new Date().toISOString()};
-        invNewIds.add(id); added++;
-      } else {
-        if (invOrders[id].appStatus!=='RECEIVED' && invOrders[id].appStatus!=='COMPLETED') {
-          invOrders[id].status=status; invOrders[id].appStatus=status;
-        }
-      }
-    });
-    invSaveState();
-    document.getElementById('lastUpdated').textContent = `Last upload: ${new Date().toLocaleString()} — ${file.name}`;
-    invRenderAll(); showToast(`${added} new inventory orders added`);
-  };
-  reader.readAsText(file);
-}
-function invMarkReceived(id) {
-  if (!invOrders[id]) return;
-  invOrders[id].appStatus='RECEIVED'; invOrders[id].receivedAt=new Date().toISOString();
-  invSaveState(); invRenderAll(); showToast('Marked as Received in WH');
-  sheetsPush(INV_SHEET, id, { app_status:'RECEIVED', received_at: invOrders[id].receivedAt, comment: allComments[id]||'', retool_data: invRetoolData[id]||'' });
-}
-function invMarkCompleted(id) {
-  if (!invOrders[id]) return;
-  sheetsDelete(INV_SHEET, id);
-  delete invOrders[id]; invSaveState(); invRenderAll();
-  showToast('Marked as Completed — order removed');
-}
-function invCopyId(id, btn) {
-  const o = invOrders[id];
-  const sku = (o && o.sku_id) ? o.sku_id : id;
-  navigator.clipboard.writeText(sku).then(()=>{
-    btn.textContent='✓ copied'; btn.classList.add('copied');
-    setTimeout(()=>{ btn.textContent='⎘ SKU'; btn.classList.remove('copied'); },1800);
-  });
-}
-function invCopyIdProduct(id, product, btn) {
-  const o = invOrders[id];
-  const sku = (o && o.sku_id) ? o.sku_id : id;
-  navigator.clipboard.writeText(sku + '\n' + product).then(()=>{
-    btn.textContent='✓ copied'; btn.classList.add('copied');
-    setTimeout(()=>{ btn.textContent='⎘ SKU+Product'; btn.classList.remove('copied'); },1800);
-  });
-}
-function invUnreceive(id) {
-  if (!invOrders[id]) return;
-  invOrders[id].appStatus = invOrders[id].status || 'ORDERED';
-  delete invOrders[id].receivedAt;
-  invSaveState(); invRenderAll(); showToast('Marked as unreceived');
-  sheetsPush(INV_SHEET, id, { app_status: invOrders[id].appStatus, received_at:'', comment: allComments[id]||'', retool_data: invRetoolData[id]||'' });
-}
 function msPopulateDynamic(menuId, triggerId, values, allLabel) {
   const menu = document.getElementById(menuId);
   const trigger = document.getElementById(triggerId);
@@ -1198,128 +1057,340 @@ function msOnChange(cb, allLabel) {
   const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
   cb.closest('.ms-option').classList.toggle('checked', cb.checked);
   msUpdateLabel(menu, trigger, allLabel);
-  // trigger re-render for the right tab
   if (menu.id.startsWith('inv-')) invRenderTable();
-  else if (menu.id.startsWith('mgmt-')) mgmtRenderTable();
   else csRenderTable();
 }
+
+// ─── INVENTORY ORDERS (continued) ────────────────────────────────────────────
+const INV_ALLOWED_WH    = new Set(['Warehouse - Coventry UK','Warehouse - Germany EU','Warehouse - Oshawa CAN']);
+
+// invOrders: keyed by Friendly Order ID → { ...groupMeta, items: [...] }
+let invOrders  = {};
+let invSortCol = 'created_date', invSortDir = -1;
+let invNewIds  = new Set();
+let invExpanded = new Set(); // track which Friendly Order IDs are expanded
+
+function invLoadState()  { try { const s=localStorage.getItem('inbound_tracker_inv_v2'); if(s) invOrders=JSON.parse(s).orders||{}; } catch(e){} }
+function invSaveState()  { try { localStorage.setItem('inbound_tracker_inv_v2', JSON.stringify({orders:invOrders})); } catch(e){} }
+function invClearAll()   {
+  if (!confirm('Clear all Inventory Orders?')) return;
+  invOrders={}; invNewIds.clear(); invExpanded.clear(); invSaveState(); invRenderAll();
+  showToast('Inventory Orders cleared');
+}
+function invHandleDrop(e) { e.preventDefault(); document.getElementById('invDropZone').classList.remove('drag'); const f=e.dataTransfer.files[0]; if(f) invProcessFile(f); }
+function invHandleFile(e) { const f=e.target.files[0]; if(f) invProcessFile(f); e.target.value=''; }
+
+function invProcessFile(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const rows = parseCSV(ev.target.result);
+    let added = 0; invNewIds.clear();
+
+    // Group rows by Friendly Order ID
+    const grouped = {};
+    rows.forEach(row => {
+      const fid = (row['Friendly Order ID'] || '').trim();
+      if (!fid) return;
+      const wh = (row['Ship-to Warehouse'] || '').trim();
+      if (!INV_ALLOWED_WH.has(wh)) return;
+      if (!grouped[fid]) grouped[fid] = [];
+      grouped[fid].push(row);
+    });
+
+    Object.entries(grouped).forEach(([fid, items]) => {
+      const first = items[0];
+      const totalQty = items.reduce((s, r) => s + (parseInt(r['Order Item Quantity'] || '0', 10) || 0), 0);
+      // Determine group-level status: use worst/most-common item status
+      const itemStatuses = items.map(r => (r['Order Item Status'] || 'ORDERED').toUpperCase());
+      const primaryStatus = invDeriveGroupStatus(itemStatuses);
+
+      if (!invOrders[fid]) {
+        invNewIds.add(fid);
+        added++;
+      }
+      invOrders[fid] = {
+        friendly_order_id: fid,
+        inventory_order_id: (first['Inventory Order ID'] || '').trim(),
+        organization: (first['Organization'] || '').trim(),
+        warehouse: (first['Ship-to Warehouse'] || '').trim(),
+        country: (first['Country'] || '').trim(),
+        po_number: (first['PO Number'] || '').trim(),
+        created_date: (first['Created Date'] || '').trim(),
+        order_status: (first['Inventory Order Status'] || '').trim().toUpperCase(),
+        reason: (first['Inventory Order Reason'] || '').trim(),
+        submitted_by: (first['Submitted By'] || '').trim(),
+        totalQty: totalQty,
+        itemStatus: primaryStatus,
+        addedAt: (invOrders[fid] && invOrders[fid].addedAt) || new Date().toISOString(),
+        items: items.map(r => ({
+          order_item_id: (r['Order Item ID'] || '').trim(),
+          brand: (r['Brand'] || '').trim(),
+          product_title: (r['Product Title'] || '').trim(),
+          quantity: parseInt(r['Order Item Quantity'] || '0', 10) || 0,
+          unit_price: (r['Order Item Unit Price'] || '').trim(),
+          total_price: (r['Order Item Total Price'] || '').trim(),
+          item_status: (r['Order Item Status'] || 'ORDERED').toUpperCase(),
+          sku_id: (r['SKU ID'] || '').trim(),
+          mpn: (r['MPN'] || '').trim(),
+          shipment_id: (r['Shipment ID'] || '').trim(),
+          shipment_status: (r['Shipment Status'] || '').trim().toUpperCase(),
+          est_delivery: (r['Shipment Est. Delivery Date'] || '').trim(),
+          carrier: (r['Shipping Carrier'] || '').trim(),
+          tracking_code: (r['Tracking Code'] || '').trim(),
+          tracking_url: (r['Tracking URL'] || '').trim(),
+        }))
+      };
+      // First item product title for single-item orders display convenience
+      if (items.length === 1) {
+        invOrders[fid].product_title = invOrders[fid].items[0].product_title;
+        invOrders[fid].sku_id = invOrders[fid].items[0].sku_id;
+      } else {
+        invOrders[fid].product_title = `${items.length} items`;
+        invOrders[fid].sku_id = '';
+      }
+    });
+
+    invSaveState();
+    document.getElementById('lastUpdated').textContent = `Last upload: ${new Date().toLocaleString()} — ${file.name}`;
+    invRenderAll(); showToast(`${added} new orders added (${Object.keys(invOrders).length} total)`);
+  };
+  reader.readAsText(file);
+}
+
+function invDeriveGroupStatus(statuses) {
+  // Priority order for display: show the "most advanced" status
+  const priority = ['OUT_FOR_DELIVERY','ARRIVED_AT_PROCESSING_FACILITY','SHIPPED','PARTIALLY_SHIPPED','ORDERED','PENDING','CANCELLED'];
+  for (const s of priority) {
+    if (statuses.includes(s)) return s;
+  }
+  return statuses[0] || 'ORDERED';
+}
+
+const INV_STATUS_LABELS = {
+  'PENDING': 'Pending',
+  'ORDERED': 'Ordered',
+  'SHIPPED': 'Shipped',
+  'ARRIVED_AT_PROCESSING_FACILITY': 'At Facility',
+  'OUT_FOR_DELIVERY': 'Out for Delivery',
+  'PARTIALLY_SHIPPED': 'Partially Shipped',
+  'CANCELLED': 'Cancelled'
+};
+
+function invCopyId(fid, btn) {
+  const o = invOrders[fid];
+  const sku = (o && o.items.length === 1 && o.items[0].sku_id) ? o.items[0].sku_id : fid;
+  navigator.clipboard.writeText(sku).then(()=>{
+    btn.textContent='✓ copied'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='⎘ SKU'; btn.classList.remove('copied'); },1800);
+  });
+}
+function invCopyIdProduct(fid, btn) {
+  const o = invOrders[fid];
+  const lines = o.items.map(it => (it.sku_id || fid) + '\n' + it.product_title).join('\n---\n');
+  navigator.clipboard.writeText(lines).then(()=>{
+    btn.textContent='✓ copied'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='⎘ SKU+Product'; btn.classList.remove('copied'); },1800);
+  });
+}
+function invCopyItemSku(sku, btn) {
+  navigator.clipboard.writeText(sku).then(()=>{
+    btn.textContent='✓'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='⎘'; btn.classList.remove('copied'); },1800);
+  });
+}
+
+function invToggleExpand(fid) {
+  if (invExpanded.has(fid)) invExpanded.delete(fid); else invExpanded.add(fid);
+  invRenderTable();
+}
+
 function invUpdateFilters() {
-  const cats = [...new Set(Object.values(invOrders).map(o => o.category).filter(Boolean))].sort();
+  const cats = [...new Set(Object.values(invOrders).flatMap(o => o.items.map(it => it.brand)).filter(Boolean))].sort();
   msPopulateDynamic('inv-categoryMenu', 'inv-categoryTrigger', cats, 'All Categories');
-  const custs = [...new Set(Object.values(invOrders).map(o => o.organization_name).filter(Boolean))].sort();
+  const custs = [...new Set(Object.values(invOrders).map(o => o.organization).filter(Boolean))].sort();
   msPopulateDynamic('inv-customerMenu', 'inv-customerTrigger', custs, 'All Customers');
 }
+
 function invGetFiltered() {
-  const search=document.getElementById('inv-search').value.toLowerCase();
-  const whs=[...document.querySelectorAll('#inv-warehouseMenu input:checked')].map(c=>c.value);
-  const cats=[...document.querySelectorAll('#inv-categoryMenu input:checked')].map(c=>c.value);
-  const custs=[...document.querySelectorAll('#inv-customerMenu input:checked')].map(c=>c.value);
-  const checked=[...document.querySelectorAll('#inv-statusMenu input:checked')].map(c=>c.value);
-  return Object.values(invOrders).filter(o=>{
-    if (whs.length   && !whs.includes(o.warehouse_name))    return false;
-    if (cats.length  && !cats.includes(o.category))         return false;
-    if (custs.length && !custs.includes(o.organization_name)) return false;
-    if (checked.length && !checked.includes(o.appStatus)) return false;
-    if (search) { const hay=[o.inventory_order_id,o.organization_name,o.product_title,o.warehouse_name,o.tracking_number,o.purchase_number].join(' ').toLowerCase(); if(!hay.includes(search)) return false; }
+  const search = document.getElementById('inv-search').value.toLowerCase();
+  const whs = [...document.querySelectorAll('#inv-warehouseMenu input:checked')].map(c=>c.value);
+  const cats = [...document.querySelectorAll('#inv-categoryMenu input:checked')].map(c=>c.value);
+  const custs = [...document.querySelectorAll('#inv-customerMenu input:checked')].map(c=>c.value);
+  const checked = [...document.querySelectorAll('#inv-statusMenu input:checked')].map(c=>c.value);
+  return Object.values(invOrders).filter(o => {
+    if (whs.length   && !whs.includes(o.warehouse))     return false;
+    if (custs.length && !custs.includes(o.organization)) return false;
+    if (cats.length  && !o.items.some(it => cats.includes(it.brand))) return false;
+    if (checked.length && !checked.includes(o.itemStatus)) return false;
+    if (search) {
+      const hay = [o.friendly_order_id, o.organization, o.warehouse, o.po_number,
+        ...o.items.map(it => it.product_title + ' ' + it.sku_id + ' ' + it.mpn + ' ' + it.tracking_code)
+      ].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
     return true;
   });
 }
+
 function invSortBy(col) { if(invSortCol===col) invSortDir*=-1; else{invSortCol=col;invSortDir=1;} invRenderTable(); }
 function invRenderAll()  { invUpdateFilters(); invRenderTable(); invRenderStats(); updateTabCounts(); }
+
 function invRenderStats() {
-  const all=Object.values(invOrders); const total=all.length||1;
-  const c={ordered:0,processing:0,shipped:0,received:0,completed:0};
-  all.forEach(o=>{ if(o.appStatus==='ORDERED')c.ordered++; else if(o.appStatus==='PROCESSING')c.processing++; else if(o.appStatus==='SHIPPED')c.shipped++; else if(o.appStatus==='RECEIVED')c.received++; else if(o.appStatus==='COMPLETED')c.completed++; });
-  document.getElementById('inv-statTotal').textContent=all.length;
-  document.getElementById('inv-statOrdered').textContent=c.ordered;
-  document.getElementById('inv-statProcessing').textContent=c.processing;
-  document.getElementById('inv-statShipped').textContent=c.shipped;
-  document.getElementById('inv-statReceived').textContent=c.received;
-  document.getElementById('inv-statCompleted').textContent=c.completed;
-  document.getElementById('inv-barOrdered').style.width=(c.ordered/total*100)+'%';
-  document.getElementById('inv-barProcessing').style.width=(c.processing/total*100)+'%';
-  document.getElementById('inv-barShipped').style.width=(c.shipped/total*100)+'%';
-  document.getElementById('inv-barReceived').style.width=(c.received/total*100)+'%';
-  document.getElementById('inv-barCompleted').style.width=(c.completed/total*100)+'%';
+  const all = Object.values(invOrders);
+  const total = all.length || 1;
+  // Count by group-level item status
+  const c = {pending:0, ordered:0, shipped:0, facility:0, outForDelivery:0, partiallyShipped:0, cancelled:0};
+  all.forEach(o => {
+    switch(o.itemStatus) {
+      case 'PENDING': c.pending++; break;
+      case 'ORDERED': c.ordered++; break;
+      case 'SHIPPED': c.shipped++; break;
+      case 'ARRIVED_AT_PROCESSING_FACILITY': c.facility++; break;
+      case 'OUT_FOR_DELIVERY': c.outForDelivery++; break;
+      case 'PARTIALLY_SHIPPED': c.partiallyShipped++; break;
+      case 'CANCELLED': c.cancelled++; break;
+    }
+  });
+  document.getElementById('inv-statTotal').textContent = all.length;
+  document.getElementById('inv-statPending').textContent = c.pending;
+  document.getElementById('inv-statOrdered').textContent = c.ordered;
+  document.getElementById('inv-statShipped').textContent = c.shipped;
+  document.getElementById('inv-statFacility').textContent = c.facility;
+  document.getElementById('inv-statCancelled').textContent = c.cancelled;
+  document.getElementById('inv-barPending').style.width = (c.pending/total*100)+'%';
+  document.getElementById('inv-barOrdered').style.width = (c.ordered/total*100)+'%';
+  document.getElementById('inv-barShipped').style.width = (c.shipped/total*100)+'%';
+  document.getElementById('inv-barFacility').style.width = (c.facility/total*100)+'%';
+  document.getElementById('inv-barCancelled').style.width = (c.cancelled/total*100)+'%';
 }
+
 function invRenderTable() {
-  const rows=invGetFiltered();
-  rows.sort((a,b)=>{ let av=a[invSortCol]||'',bv=b[invSortCol]||''; if(invSortCol==='quantity'){av=+av;bv=+bv;} return av<bv?-invSortDir:av>bv?invSortDir:0; });
-  const tbody=document.getElementById('inv-tableBody');
-  const empty=document.getElementById('inv-emptyState');
-  const newInView=rows.filter(r=>invNewIds.has(r.inventory_order_id)).length;
-  document.getElementById('inv-rowCount').textContent=rows.length;
-  document.getElementById('inv-newCount').textContent=newInView>0?`+${newInView} new this upload`:'';
-  if(rows.length===0){tbody.innerHTML='';empty.style.display='block';invUpdateBulkBar();return;}
-  empty.style.display='none';
-  tbody.innerHTML=rows.map(o=>{
-    const isNew=invNewIds.has(o.inventory_order_id);
-    const isRec=o.appStatus==='RECEIVED';
-    const eid=o.inventory_order_id.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    const eprod=(o.product_title||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    const isChecked = invSelected.has(o.inventory_order_id);
-    let btn = isRec
-      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-receive done" disabled>✓ Received</button><button class="btn-unreceive" onclick="invUnreceive('${eid}')">↩ Unreceive</button><button class="btn-complete" onclick="invMarkCompleted('${eid}')">Mark Completed</button></div>`
-      : `<button class="btn-receive" onclick="invMarkReceived('${eid}')">Mark Received</button>`;
-    const lbl = o.appStatus==='RECEIVED'?'Received in WH': o.appStatus.charAt(0)+o.appStatus.slice(1).toLowerCase();
+  const rows = invGetFiltered();
+  rows.sort((a, b) => {
+    let av = a[invSortCol] || '', bv = b[invSortCol] || '';
+    if (invSortCol === 'totalQty') { av = +av; bv = +bv; }
+    return av < bv ? -invSortDir : av > bv ? invSortDir : 0;
+  });
+  const tbody = document.getElementById('inv-tableBody');
+  const empty = document.getElementById('inv-emptyState');
+  const newInView = rows.filter(r => invNewIds.has(r.friendly_order_id)).length;
+  document.getElementById('inv-rowCount').textContent = rows.length;
+  document.getElementById('inv-newCount').textContent = newInView > 0 ? `+${newInView} new this upload` : '';
+  if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; invUpdateBulkBar(); return; }
+  empty.style.display = 'none';
+
+  let html = '';
+  rows.forEach(o => {
+    const fid = o.friendly_order_id;
+    const efid = fid.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const isNew = invNewIds.has(fid);
+    const isMulti = o.items.length > 1;
+    const isOpen = invExpanded.has(fid);
+    const isChecked = invSelected.has(fid);
+    const statusLabel = INV_STATUS_LABELS[o.itemStatus] || o.itemStatus;
+
+    // Tracking: for single-item, show directly; for multi, show first available or —
     let tracking = '—';
-    if (o.tracking_url) tracking=`<a class="tracking-link" href="${o.tracking_url}" target="_blank" style="max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${o.tracking_number||'Track'}</a>`;
-    else if (o.tracking_number) tracking=`<span class="mono" style="max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.tracking_number}</span>`;
+    const trackItem = o.items.find(it => it.tracking_url || it.tracking_code);
+    if (trackItem) {
+      if (trackItem.tracking_url) tracking = `<a class="tracking-link" href="${trackItem.tracking_url}" target="_blank" style="max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">${trackItem.tracking_code || 'Track'}</a>`;
+      else tracking = `<span class="mono" style="max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${trackItem.tracking_code}</span>`;
+    }
+
+    // Product cell
+    let productCell;
+    if (isMulti) {
+      productCell = `<button class="expand-toggle" onclick="invToggleExpand('${efid}')">
+        <span class="expand-arrow ${isOpen?'open':''}">▶</span>
+        ${o.items.length} items
+      </button><span class="item-count-chip">${o.totalQty} units</span>`;
+    } else {
+      const it = o.items[0];
+      productCell = `<span class="sku-tooltip-wrap">${it.product_title || '—'}<span class="sku-tip">SKU: ${it.sku_id || '—'}</span></span>`;
+    }
+
+    // Copy cell
+    const copyCell = `<div class="copy-col"><button class="btn-copy" onclick="invCopyId('${efid}',this)">⎘ SKU</button><button class="btn-copy" onclick="invCopyIdProduct('${efid}',this)">⎘ SKU+Product</button></div>`;
 
     // Retool popover button
-    const isComputer = (o.category||'').toUpperCase()==='COMPUTER';
-    const savedVal = invRetoolData[o.inventory_order_id] || '';
+    const isComputer = o.items.some(it => (it.brand || '').toUpperCase() === 'APPLE' && (it.product_title || '').toLowerCase().includes('macbook'));
+    const savedVal = invRetoolData[fid] || '';
     const hasData = savedVal !== '';
     const retoolBtnLabel = isComputer ? '⌨ Enter Serials' : '# Enter Qty';
     const retoolBtn = `
-      <div class="retool-popover-wrap" id="popwrap-${o.inventory_order_id}">
-        <button class="btn-retool ${hasData?'ready':''}" onclick="invTogglePopover('${eid}', event)">${hasData ? '✓ ' : ''}${retoolBtnLabel}</button>
-        <div class="retool-bubble" id="bubble-${o.inventory_order_id}">
+      <div class="retool-popover-wrap" id="popwrap-${fid}">
+        <button class="btn-retool ${hasData?'ready':''}" onclick="invTogglePopover('${efid}', event)">${hasData ? '✓ ' : ''}${retoolBtnLabel}</button>
+        <div class="retool-bubble" id="bubble-${fid}">
           <div class="retool-bubble-title">${isComputer ? 'Serial Numbers (comma-separated)' : 'Quantity Received'}</div>
           ${isComputer
-            ? `<textarea placeholder="SN001, SN002, SN003..." id="retool-input-${o.inventory_order_id}" onkeydown="event.stopPropagation()">${savedVal}</textarea>`
-            : `<input type="number" min="1" max="${o.quantity||999}" value="${savedVal || (o.quantity||'')}" id="retool-input-${o.inventory_order_id}" onkeydown="event.stopPropagation()">`
+            ? `<textarea placeholder="SN001, SN002, SN003..." id="retool-input-${fid}" onkeydown="event.stopPropagation()">${savedVal}</textarea>`
+            : `<input type="number" min="1" max="${o.totalQty||999}" value="${savedVal || (o.totalQty||'')}" id="retool-input-${fid}" onkeydown="event.stopPropagation()">`
           }
           <div class="bubble-actions">
-            <button class="bubble-save" onclick="invSaveRetoolData('${eid}')">Save</button>
-            <button class="bubble-cancel" onclick="invClosePopover('${eid}')">Cancel</button>
+            <button class="bubble-save" onclick="invSaveRetoolData('${efid}')">Save</button>
+            <button class="bubble-cancel" onclick="invClosePopover('${efid}')">Cancel</button>
           </div>
         </div>
       </div>`;
 
-    return `<tr class="${isRec?'received':''}">
-      <td class="check-cell"><input type="checkbox" class="row-check inv-row-check" data-id="${o.inventory_order_id}" ${isChecked?'checked':''} onchange="invToggleSelect('${eid}', this.checked)"></td>
-      <td class="id-cell">${o.inventory_order_id}${isNew?'<span class="new-tag">new</span>':''}</td>
-      <td>${o.organization_name||'—'}</td>
-      <td class="copy-col-cell"><div class="copy-col"><button class="btn-copy" onclick="invCopyId('${eid}',this)">⎘ SKU</button><button class="btn-copy" onclick="invCopyIdProduct('${eid}','${eprod}',this)">⎘ SKU+Product</button></div></td>
-      <td class="product-cell"><span class="sku-tooltip-wrap">${o.product_title||'—'}<span class="sku-tip">SKU: ${o.sku_id||'—'}</span></span></td>
-      <td class="mono">${o.quantity||'—'}</td>
-      <td class="mono">${whLabel(o.warehouse_name||'')}</td>
-      <td class="mono">${o.purchase_number||'—'}</td>
+    html += `<tr>
+      <td class="check-cell"><input type="checkbox" class="row-check inv-row-check" data-id="${fid}" ${isChecked?'checked':''} onchange="invToggleSelect('${efid}', this.checked)"></td>
+      <td class="id-cell">${fid}${isNew ? '<span class="new-tag">new</span>' : ''}</td>
+      <td>${o.organization || '—'}</td>
+      <td class="product-cell">${productCell}</td>
+      <td class="copy-col-cell">${copyCell}</td>
+      <td class="mono">${o.totalQty || '—'}</td>
+      <td class="mono">${whLabel(o.warehouse)}</td>
+      <td class="mono">${o.po_number || '—'}</td>
       <td class="mono" style="max-width:130px;overflow:hidden">${tracking}</td>
-      <td><span class="badge badge-${o.appStatus}">${lbl}</span></td>
-      <td class="date-cell">${fmtDate(o.created_at)}</td>
-      <td class="comment-cell">${commentInput(o.inventory_order_id)}</td>
-      <td>${btn}</td>
-      <td>${retoolBtn}</td></tr>`;
-  }).join('');
+      <td><span class="badge badge-${o.itemStatus}">${statusLabel}</span></td>
+      <td class="date-cell">${o.created_date || '—'}</td>
+      <td>${retoolBtn}</td>
+    </tr>`;
+
+    // Child rows for multi-item orders
+    if (isMulti && isOpen) {
+      o.items.forEach((it, idx) => {
+        const itemStatusLabel = INV_STATUS_LABELS[it.item_status] || it.item_status;
+        let itemTracking = '—';
+        if (it.tracking_url) itemTracking = `<a class="tracking-link" href="${it.tracking_url}" target="_blank" style="max-width:100px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.tracking_code || 'Track'}</a>`;
+        else if (it.tracking_code) itemTracking = `<span class="mono" style="max-width:100px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.tracking_code}</span>`;
+        const eskuItem = (it.sku_id || '').replace(/'/g, "\\'");
+        html += `<tr class="child-row">
+          <td></td>
+          <td class="mono" style="color:var(--muted);font-size:11px"><span class="child-indent">└</span> Item ${idx+1}</td>
+          <td></td>
+          <td class="product-cell" style="font-size:12px"><span class="sku-tooltip-wrap">${it.product_title || '—'}<span class="sku-tip">SKU: ${it.sku_id || '—'}</span></span></td>
+          <td><button class="btn-copy" onclick="invCopyItemSku('${eskuItem}',this)" style="font-size:9px">⎘</button></td>
+          <td class="mono">${it.quantity}</td>
+          <td></td>
+          <td></td>
+          <td style="max-width:100px;overflow:hidden">${itemTracking}</td>
+          <td><span class="badge badge-${it.item_status}">${itemStatusLabel}</span></td>
+          <td class="date-cell" style="font-size:10px">${it.est_delivery || '—'}</td>
+          <td></td>
+        </tr>`;
+      });
+    }
+  });
+  tbody.innerHTML = html;
   invUpdateBulkBar();
 }
 
 // ─── RETOOL INTEGRATION ──────────────────────────────────────────────────────
-let invSelected   = new Set();  // selected order IDs for bulk send
-let invRetoolData = {};         // { [inventory_order_id]: serialsString | qtyString }
+let invSelected   = new Set();  // selected Friendly Order IDs for bulk send
+let invRetoolData = {};         // { [friendly_order_id]: serialsString | qtyString }
 
-function invToggleSelect(id, checked) {
-  if (checked) invSelected.add(id); else invSelected.delete(id);
+function invToggleSelect(fid, checked) {
+  if (checked) invSelected.add(fid); else invSelected.delete(fid);
   invUpdateBulkBar();
 }
 function invToggleAll(checked) {
   const checkboxes = document.querySelectorAll('.inv-row-check');
   checkboxes.forEach(cb => {
-    const id = cb.dataset.id;
+    const fid = cb.dataset.id;
     cb.checked = checked;
-    if (checked) invSelected.add(id); else invSelected.delete(id);
+    if (checked) invSelected.add(fid); else invSelected.delete(fid);
   });
   invUpdateBulkBar();
 }
@@ -1338,15 +1409,13 @@ function invUpdateBulkBar() {
 }
 
 // Popover
-function invTogglePopover(id, e) {
+function invTogglePopover(fid, e) {
   e.stopPropagation();
-  const bubble = document.getElementById('bubble-' + id);
+  const bubble = document.getElementById('bubble-' + fid);
   if (!bubble) return;
   const isOpen = bubble.classList.contains('open');
-  // close all open bubbles first
   document.querySelectorAll('.retool-bubble.open').forEach(b => b.classList.remove('open'));
   if (!isOpen) {
-    // Position bubble above the button using fixed coords
     const btn = e.currentTarget;
     const rect = btn.getBoundingClientRect();
     bubble.style.left = (rect.left + rect.width / 2 - 125) + 'px';
@@ -1355,22 +1424,18 @@ function invTogglePopover(id, e) {
     bubble.classList.add('open');
   }
 }
-function invClosePopover(id) {
-  const bubble = document.getElementById('bubble-' + id);
+function invClosePopover(fid) {
+  const bubble = document.getElementById('bubble-' + fid);
   if (bubble) bubble.classList.remove('open');
 }
-function invSaveRetoolData(id) {
-  const input = document.getElementById('retool-input-' + id);
+function invSaveRetoolData(fid) {
+  const input = document.getElementById('retool-input-' + fid);
   if (!input) return;
   const val = input.value.trim();
-  if (val) invRetoolData[id] = val; else delete invRetoolData[id];
-  invClosePopover(id);
-  invRenderTable(); // re-render to update button state
-  // Sync retool data to Sheets
-  const o = invOrders[id];
-  if (o) sheetsPush(INV_SHEET, id, { app_status: o.appStatus, received_at: o.receivedAt||'', comment: allComments[id]||'', retool_data: val });
+  if (val) invRetoolData[fid] = val; else delete invRetoolData[fid];
+  invClosePopover(fid);
+  invRenderTable();
 }
-// Close popovers when clicking outside
 document.addEventListener('click', e => {
   if (!e.target.closest('.retool-popover-wrap')) {
     document.querySelectorAll('.retool-bubble.open').forEach(b => b.classList.remove('open'));
@@ -1381,34 +1446,21 @@ document.addEventListener('click', e => {
 async function invBulkSend() {
   const ids = [...invSelected];
   if (ids.length === 0) { showToast('No orders selected'); return; }
-
-  // Check all selected orders have data entered
-  const missing = ids.filter(id => !invRetoolData[id]);
+  const missing = ids.filter(fid => !invRetoolData[fid]);
   if (missing.length > 0) {
-    const orders = missing.map(id => {
-      const o = invOrders[id];
-      return o ? (o.product_title||id).substring(0,40) : id;
+    const orders = missing.map(fid => {
+      const o = invOrders[fid];
+      return o ? (o.product_title || fid).substring(0, 40) : fid;
     });
     if (!confirm(`${missing.length} order(s) have no serials/qty entered:\n\n${orders.join('\n')}\n\nContinue anyway?`)) return;
   }
-
   const btn = document.getElementById('inv-bulkSendBtn');
   btn.disabled = true;
   btn.textContent = 'Opening Retool...';
-
-  // Open Retool in a new tab
   const retoolUrl = 'https://firstbase.retool.com/apps/e2b95c44-ac95-11ed-86f6-9b2bac97cfc8/Ops%20Apps/Inventory%20Orders%20Management#inventory_order_id=';
-  const retoolTab = window.open(retoolUrl, 'retool_inbound');
-
+  window.open(retoolUrl, 'retool_inbound');
   showToast(`Ready — ${ids.length} order IDs to process in Retool`);
-
-  // Copy all order IDs to clipboard for easy pasting
-  const idList = ids.join('\n');
-  try {
-    await navigator.clipboard.writeText(ids.join(', '));
-    showToast(`${ids.length} order IDs copied to clipboard`);
-  } catch(e) {}
-
+  try { await navigator.clipboard.writeText(ids.join(', ')); showToast(`${ids.length} order IDs copied to clipboard`); } catch(e) {}
   btn.disabled = false;
   btn.textContent = '⬆ Send to Retool';
 }
@@ -1585,289 +1637,6 @@ function csRenderTable() {
       <td>${btn}</td></tr>`;
   }).join('');
 }
-
-// ─── INVENTORY ORDERS - MGMT ──────────────────────────────────────────────────
-const MGMT_SHEET = 'MGMTOrders';
-
-// Seed data scraped from MGMT (Processing, non-SLC) — refreshed via bulkWrite on load
-const MGMT_SEED = [];
-
-// mgmtOrders: keyed by order_id
-let mgmtOrders = {};
-let mgmtSortCol = 'created_date', mgmtSortDir = -1;
-
-function mgmtLoadState() {
-  try {
-    const s = localStorage.getItem('inbound_tracker_mgmt_v2');
-    if (s) mgmtOrders = JSON.parse(s).orders || {};
-  } catch(e) {}
-}
-function mgmtSaveState() {
-  try { localStorage.setItem('inbound_tracker_mgmt_v2', JSON.stringify({orders: mgmtOrders})); } catch(e) {}
-}
-function mgmtClearAll() {
-  if (!confirm('Clear all MGMT orders? This will remove all local state.')) return;
-  mgmtOrders = {}; mgmtSaveState(); mgmtRenderAll();
-  showToast('MGMT Orders cleared');
-}
-
-// ── MGMT LIVE LOAD FROM GOOGLE SHEETS ───────────────────────────────────────
-// Fetches MGMTOrders + SKU Catalog tabs directly via CSV export (no Apps Script needed)
-async function mgmtLoadFromSheets() {
-  setSyncStatus('syncing', 'Loading MGMT orders…');
-  try {
-    const [ordersRes, skuRes] = await Promise.all([
-      fetch(mgmtCsvUrl(MGMT_ORDERS_GID), { cache: 'no-store' }),
-      fetch(mgmtCsvUrl(SKU_CATALOG_GID),  { cache: 'no-store' })
-    ]);
-    if (!ordersRes.ok) throw new Error('MGMTOrders fetch failed: ' + ordersRes.status);
-    if (!skuRes.ok)    throw new Error('SKU Catalog fetch failed: ' + skuRes.status);
-
-    const [ordersText, skuText] = await Promise.all([ordersRes.text(), skuRes.text()]);
-
-    // Build MPN → {sku_id, description} map from SKU Catalog
-    // Expected columns: ITEM_Code, ITEM_DETAILED_DESCRIPTION, MPN_VENDOR_SKU, CATEGORY
-    const skuMap = {};
-    const skuRows = parseCSV(skuText);
-    skuRows.forEach(r => {
-      const mpn = (r['MPN_VENDOR_SKU'] || r['MPN'] || '').trim();
-      if (mpn) skuMap[mpn] = {
-        sku_id: (r['ITEM_Code'] || r['SKU ID'] || r['sku_id'] || '').trim(),
-        description: (r['ITEM_DETAILED_DESCRIPTION'] || r['Product Description'] || '').trim()
-      };
-    });
-
-    // Parse MGMTOrders
-    // Expected columns: Order ID, Created Date, Org, Warehouse, Status, Customer PO, Product Title, MPN, SKU ID, Quantity
-    const orderRows = parseCSV(ordersText);
-    let loaded = 0;
-    const newOrders = {};
-    orderRows.forEach(r => {
-      const id = (r['Order ID'] || r['order_id'] || '').trim();
-      if (!id) return;
-      const mpn = (r['MPN'] || r['mpn'] || '').trim();
-
-      // SKU enrichment: prefer sheet value, fallback to catalog lookup
-      let sku_id    = (r['SKU ID'] || r['sku_id'] || '').trim();
-      let prod_title = (r['Product Title'] || r['product_title'] || '').trim();
-      if (mpn && skuMap[mpn]) {
-        if (!sku_id)    sku_id    = skuMap[mpn].sku_id;
-        if (!prod_title) prod_title = skuMap[mpn].description;
-      }
-
-      const existing = mgmtOrders[id];
-      newOrders[id] = {
-        order_id:     id,
-        created_date: (r['Created Date'] || r['created_date'] || '').trim(),
-        org:          (r['Org'] || r['Organization'] || r['org'] || '').trim(),
-        warehouse:    (r['Warehouse'] || r['warehouse'] || '').trim(),
-        mgmt_status:  (r['Status'] || r['status'] || 'Processing').trim(),
-        customer_po:  (r['Customer PO'] || r['customer_po'] || '').trim(),
-        product_title: prod_title,
-        mpn:           mpn,
-        sku_id:        sku_id,
-        quantity:      parseInt(r['Quantity'] || r['quantity'] || '1', 10) || 1,
-        // Preserve local app_status if already actioned
-        appStatus:    (existing && existing.appStatus !== 'PROCESSING') ? existing.appStatus : 'PROCESSING',
-        receivedAt:   (existing && existing.receivedAt) || '',
-        addedAt:      (existing && existing.addedAt) || new Date().toISOString()
-      };
-      if (allComments[id] === undefined && existing && allComments[id]) allComments[id] = allComments[id];
-      loaded++;
-    });
-
-    mgmtOrders = newOrders;
-    mgmtSaveState(); commentsSave();
-    mgmtRenderAll();
-
-    const ts = new Date().toLocaleTimeString();
-    document.getElementById('mgmt-lastRefresh').textContent = `Last refresh: ${ts} — ${loaded} orders`;
-    setSyncStatus('ok', 'Synced');
-    document.getElementById('lastUpdated').textContent =
-      `${Object.keys(invOrders).length} inventory + ${Object.keys(csOrders).length} customer supplied + ${loaded} MGMT orders loaded`;
-
-  } catch(err) {
-    setSyncStatus('error', 'MGMT load failed — check sheet access');
-    console.error('mgmtLoadFromSheets error:', err);
-    showToast('MGMT load failed — make sure the sheet is publicly accessible');
-  }
-}
-
-
-function mgmtMarkReceived(id) {
-  if (!mgmtOrders[id]) return;
-  mgmtOrders[id].appStatus = 'RECEIVED';
-  mgmtOrders[id].receivedAt = new Date().toISOString();
-  mgmtSaveState(); mgmtRenderAll();
-  showToast('Marked as Received in WH');
-  sheetsPush(MGMT_SHEET, id, { app_status: 'RECEIVED', received_at: mgmtOrders[id].receivedAt, comment: allComments[id] || '' });
-}
-function mgmtMarkCompleted(id) {
-  if (!mgmtOrders[id]) return;
-  sheetsDelete(MGMT_SHEET, id);
-  delete mgmtOrders[id]; mgmtSaveState(); mgmtRenderAll();
-  showToast('Marked as Completed — order removed');
-}
-function mgmtUnreceive(id) {
-  if (!mgmtOrders[id]) return;
-  mgmtOrders[id].appStatus = 'PROCESSING';
-  delete mgmtOrders[id].receivedAt;
-  mgmtSaveState(); mgmtRenderAll();
-  showToast('Marked as unreceived');
-  sheetsPush(MGMT_SHEET, id, { app_status: 'PROCESSING', received_at: '', comment: allComments[id] || '' });
-}
-
-function mgmtCopyId(id, btn) {
-  const o = mgmtOrders[id];
-  const sku = (o && o.sku_id) ? o.sku_id : id;
-  navigator.clipboard.writeText(sku).then(() => {
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ SKU'; btn.classList.remove('copied'); }, 1800);
-  });
-}
-function mgmtCopyIdProduct(id, product, btn) {
-  const o = mgmtOrders[id];
-  const sku = (o && o.sku_id) ? o.sku_id : id;
-  navigator.clipboard.writeText(sku + '\n' + product).then(() => {
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ SKU+Product'; btn.classList.remove('copied'); }, 1800);
-  });
-}
-
-// ── MGMT DROPDOWN FILTERS ────────────────────────────────────────────────────
-function mgmtPopulateDropdowns() {
-  const whs  = [...new Set(Object.values(mgmtOrders).map(o => o.warehouse).filter(Boolean))].sort();
-  const orgs = [...new Set(Object.values(mgmtOrders).map(o => o.org).filter(Boolean))].sort();
-  mgmtPopulateMenu('mgmt-warehouseMenu', 'mgmt-warehouseTrigger', whs, 'All Warehouses');
-  mgmtPopulateMenu('mgmt-orgMenu',       'mgmt-orgTrigger',       orgs,'All Orgs');
-  // Status menu is static — just wire checkboxes
-  wireMsCheckboxes(document.getElementById('mgmt-statusMenu'));
-}
-
-function mgmtPopulateMenu(menuId, triggerId, values, allLabel) {
-  const menu    = document.getElementById(menuId);
-  const trigger = document.getElementById(triggerId);
-  // Preserve search input, remove old options only
-  [...menu.querySelectorAll('.ms-option')].forEach(el => el.remove());
-  values.forEach(val => {
-    const label = document.createElement('label');
-    label.className = 'ms-option';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.value = val;
-    cb.addEventListener('change', () => {
-      label.classList.toggle('checked', cb.checked);
-      msUpdateLabel(menu, trigger, allLabel);
-      mgmtRenderTable();
-    });
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' ' + val.replace('Warehouse - ', '')));
-    menu.appendChild(label);
-  });
-}
-
-function mgmtOnFilterChange(cb) {
-  cb.closest('.ms-option').classList.toggle('checked', cb.checked);
-  const menu    = cb.closest('.ms-dropdown');
-  const trigger = menu.closest('.ms-wrap').querySelector('.ms-trigger');
-  msUpdateLabel(menu, trigger, trigger.dataset.allLabel || 'All');
-  mgmtRenderTable();
-}
-
-function mgmtFilterDropdown(menuId, query) {
-  const menu = document.getElementById(menuId);
-  const q = query.toLowerCase();
-  menu.querySelectorAll('.ms-option').forEach(opt => {
-    const text = opt.textContent.trim().toLowerCase();
-    opt.classList.toggle('hidden', q.length > 0 && !text.includes(q));
-  });
-}
-
-function mgmtRenderAll() { mgmtPopulateDropdowns(); mgmtRenderTable(); mgmtRenderStats(); updateTabCounts(); }
-
-function mgmtGetFiltered() {
-  const search   = (document.getElementById('mgmt-search').value || '').toLowerCase();
-  const whVals   = [...document.querySelectorAll('#mgmt-warehouseMenu input:checked')].map(c => c.value);
-  const orgVals  = [...document.querySelectorAll('#mgmt-orgMenu input:checked')].map(c => c.value);
-  const statVals = [...document.querySelectorAll('#mgmt-statusMenu input:checked')].map(c => c.value);
-  return Object.values(mgmtOrders).filter(o => {
-    if (whVals.length  && !whVals.includes(o.warehouse || ''))   return false;
-    if (orgVals.length && !orgVals.includes(o.org || ''))        return false;
-    if (statVals.length && !statVals.includes(o.appStatus || '')) return false;
-    if (search) {
-      const hay = [o.order_id, o.org, o.warehouse, o.customer_po, o.product_title, o.mpn].join(' ').toLowerCase();
-      if (!hay.includes(search)) return false;
-    }
-    return true;
-  });
-}
-
-function mgmtSortBy(col) {
-  if (mgmtSortCol === col) mgmtSortDir *= -1; else { mgmtSortCol = col; mgmtSortDir = 1; }
-  mgmtRenderTable();
-}
-
-function mgmtRenderStats() {
-  const all = Object.values(mgmtOrders); const total = all.length || 1;
-  const proc = all.filter(o => o.appStatus === 'PROCESSING').length;
-  const rec  = all.filter(o => o.appStatus === 'RECEIVED').length;
-  const comp = all.filter(o => o.appStatus === 'COMPLETED').length;
-  document.getElementById('mgmt-statTotal').textContent = all.length;
-  document.getElementById('mgmt-statProcessing').textContent = proc;
-  document.getElementById('mgmt-statReceived').textContent = rec;
-  document.getElementById('mgmt-statCompleted').textContent = comp;
-  document.getElementById('mgmt-barProcessing').style.width = (proc / total * 100) + '%';
-  document.getElementById('mgmt-barReceived').style.width = (rec / total * 100) + '%';
-  document.getElementById('mgmt-barCompleted').style.width = (comp / total * 100) + '%';
-}
-
-const MGMT_BADGE_LABELS = { 'PROCESSING': 'Processing', 'RECEIVED': 'Received in WH', 'COMPLETED': 'Completed' };
-
-function mgmtRenderTable() {
-  const rows = mgmtGetFiltered();
-  rows.sort((a, b) => {
-    let av = a[mgmtSortCol] || '', bv = b[mgmtSortCol] || '';
-    return av < bv ? -mgmtSortDir : av > bv ? mgmtSortDir : 0;
-  });
-  const tbody = document.getElementById('mgmt-tableBody');
-  const empty = document.getElementById('mgmt-emptyState');
-  document.getElementById('mgmt-rowCount').textContent = rows.length;
-  if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-  empty.style.display = 'none';
-  tbody.innerHTML = rows.map(o => {
-    const id = o.order_id;
-    const eid = id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const isRec = o.appStatus === 'RECEIVED';
-    const mgmtUrl = `https://mgmt.firstbasehq.com/platform/inventory_orders/${id}`;
-    let btn = isRec
-      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-receive done" disabled>✓ Received</button><button class="btn-unreceive" onclick="mgmtUnreceive('${eid}')">↩ Unreceive</button><button class="btn-complete" onclick="mgmtMarkCompleted('${eid}')">Mark Completed</button></div>`
-      : `<button class="btn-receive" onclick="mgmtMarkReceived('${eid}')">Mark Received</button>`;
-    const whShort = whLabel(o.warehouse || '');
-    const badge = o.appStatus || 'PROCESSING';
-    const lbl = MGMT_BADGE_LABELS[badge] || badge;
-    const prodTitle = o.product_title || '—';
-    const skuTip = o.sku_id ? `<span class="sku-tip">SKU: ${o.sku_id}</span>` : '';
-    const prodCell = skuTip
-      ? `<span class="sku-tooltip-wrap">${prodTitle}${skuTip}</span>`
-      : prodTitle;
-    const emgmt = id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const eprodmgmt = (o.product_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    return `<tr class="${isRec ? 'received' : ''}">
-      <td class="id-cell"><a class="tracking-link" href="${mgmtUrl}" target="_blank">${id}</a></td>
-      <td class="date-cell">${o.created_date || '—'}</td>
-      <td>${o.org || '—'}</td>
-      <td class="mono">${whShort}</td>
-      <td class="product-cell">${prodCell}</td>
-      <td class="copy-col-cell"><div class="copy-col"><button class="btn-copy" onclick="mgmtCopyId('${emgmt}',this)">⎘ SKU</button><button class="btn-copy" onclick="mgmtCopyIdProduct('${emgmt}','${eprodmgmt}',this)">⎘ SKU+Product</button></div></td>
-      <td class="mono" style="font-size:11px">${o.mpn || '—'}</td>
-      <td class="mono">${o.quantity || '—'}</td>
-      <td><span class="badge badge-${badge}">${lbl}</span></td>
-      <td class="mono">${o.customer_po || '—'}</td>
-      <td class="comment-cell">${commentInput(id)}</td>
-      <td>${btn}</td>
-    </tr>`;
-  }).join('');
-}
-
 
 // ─── PRODUCT SEARCH ───────────────────────────────────────────────────────────
 let psCatalog     = [];      // [{sku_id, desc, mpn, cat}]
@@ -2059,14 +1828,13 @@ function psCopyExact(btn) {
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-invLoadState(); csLoadState(); mgmtLoadState(); commentsLoad();
-invRenderAll(); csRenderAll(); mgmtRenderAll();
+invLoadState(); csLoadState(); commentsLoad();
+invRenderAll(); csRenderAll();
 const invN = Object.keys(invOrders).length, csN = Object.keys(csOrders).length;
 if (invN > 0 || csN > 0)
-  document.getElementById('lastUpdated').textContent = `${invN} inventory + ${csN} customer supplied — loading MGMT…`;
-// Load Inv/CS state from Apps Script, and MGMT orders live from sheet
+  document.getElementById('lastUpdated').textContent = `${invN} inventory + ${csN} customer supplied orders loaded`;
+// Load Inv/CS state from Apps Script
 sheetsLoadAll();
-mgmtLoadFromSheets();
 </script>
 </body>
 </html>
