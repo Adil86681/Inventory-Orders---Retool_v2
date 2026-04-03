@@ -563,15 +563,6 @@
     <p>↑ <strong>Drop Inventory CSV here</strong> or click to browse — only new orders from your 3 warehouses will be added</p>
   </div>
 
-  <div class="bulk-bar" id="inv-bulkBar">
-    <div class="bulk-bar-label">
-      <span id="inv-bulkCount">0</span> orders selected
-      — make sure serials / quantities are entered before sending
-    </div>
-    <button class="btn-bulk-send" id="inv-bulkSendBtn" onclick="invBulkSend()">⬆ Send to Retool</button>
-    <button class="btn-bulk-clear" onclick="invClearSelection()">✕ Clear</button>
-  </div>
-
   <div class="controls">
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
@@ -602,6 +593,7 @@
         <label class="ms-option"><input type="checkbox" value="ARRIVED_AT_PROCESSING_FACILITY" onchange="invRenderTable()"> At Facility</label>
         <label class="ms-option"><input type="checkbox" value="OUT_FOR_DELIVERY" onchange="invRenderTable()"> Out for Delivery</label>
         <label class="ms-option"><input type="checkbox" value="PARTIALLY_SHIPPED" onchange="invRenderTable()"> Partially Shipped</label>
+        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="invRenderTable()"> Received in WH</label>
         <label class="ms-option"><input type="checkbox" value="CANCELLED" onchange="invRenderTable()"> Cancelled</label>
       </div>
     </div>
@@ -615,7 +607,6 @@
     <div class="table-scroll">
       <table>
         <thead><tr>
-          <th class="check-cell"><input type="checkbox" class="row-check" id="inv-checkAll" onchange="invToggleAll(this.checked)" title="Select all"></th>
           <th onclick="invSortBy('friendly_order_id')">Order ID</th>
           <th onclick="invSortBy('organization')">Customer</th>
           <th onclick="invSortBy('product_title')">Product</th>
@@ -626,7 +617,7 @@
           <th>Tracking</th>
           <th onclick="invSortBy('itemStatus')">Status</th>
           <th onclick="invSortBy('created_date')">Created</th>
-          <th>Retool</th>
+          <th>Action</th>
         </tr></thead>
         <tbody id="inv-tableBody"></tbody>
       </table>
@@ -851,7 +842,6 @@ async function sheetsLoadAll() {
           if (s.app_status) invOrders[id].appStatus = s.app_status;
           if (s.received_at) invOrders[id].receivedAt = s.received_at;
           if (s.comment)  allComments[id] = s.comment;
-          if (s.retool_data) invRetoolData[id] = s.retool_data;
         }
       });
     }
@@ -1104,10 +1094,14 @@ function invProcessFile(file) {
       const itemStatuses = items.map(r => (r['Order Item Status'] || 'ORDERED').toUpperCase());
       const primaryStatus = invDeriveGroupStatus(itemStatuses);
 
-      if (!invOrders[fid]) {
+      const existing = invOrders[fid];
+      if (!existing) {
         invNewIds.add(fid);
         added++;
       }
+      // Preserve appStatus if already actioned (RECEIVED/COMPLETED)
+      const preservedAppStatus = (existing && (existing.appStatus === 'RECEIVED' || existing.appStatus === 'COMPLETED'))
+        ? existing.appStatus : primaryStatus;
       invOrders[fid] = {
         friendly_order_id: fid,
         inventory_order_id: (first['Inventory Order ID'] || '').trim(),
@@ -1121,7 +1115,9 @@ function invProcessFile(file) {
         submitted_by: (first['Submitted By'] || '').trim(),
         totalQty: totalQty,
         itemStatus: primaryStatus,
-        addedAt: (invOrders[fid] && invOrders[fid].addedAt) || new Date().toISOString(),
+        appStatus: preservedAppStatus,
+        receivedAt: (existing && existing.receivedAt) || '',
+        addedAt: (existing && existing.addedAt) || new Date().toISOString(),
         items: items.map(r => ({
           order_item_id: (r['Order Item ID'] || '').trim(),
           brand: (r['Brand'] || '').trim(),
@@ -1173,7 +1169,9 @@ const INV_STATUS_LABELS = {
   'ARRIVED_AT_PROCESSING_FACILITY': 'At Facility',
   'OUT_FOR_DELIVERY': 'Out for Delivery',
   'PARTIALLY_SHIPPED': 'Partially Shipped',
-  'CANCELLED': 'Cancelled'
+  'CANCELLED': 'Cancelled',
+  'RECEIVED': 'Received in WH',
+  'COMPLETED': 'Completed'
 };
 
 function invCopyId(fid, btn) {
@@ -1221,7 +1219,7 @@ function invGetFiltered() {
     if (whs.length   && !whs.includes(o.warehouse))     return false;
     if (custs.length && !custs.includes(o.organization)) return false;
     if (cats.length  && !o.items.some(it => cats.includes(it.brand))) return false;
-    if (checked.length && !checked.includes(o.itemStatus)) return false;
+    if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) {
       const hay = [o.friendly_order_id, o.organization, o.warehouse, o.po_number,
         ...o.items.map(it => it.product_title + ' ' + it.sku_id + ' ' + it.mpn + ' ' + it.tracking_code)
@@ -1239,9 +1237,9 @@ function invRenderStats() {
   const all = Object.values(invOrders);
   const total = all.length || 1;
   // Count by group-level item status
-  const c = {pending:0, ordered:0, shipped:0, facility:0, outForDelivery:0, partiallyShipped:0, cancelled:0};
+  const c = {pending:0, ordered:0, shipped:0, facility:0, outForDelivery:0, partiallyShipped:0, cancelled:0, received:0};
   all.forEach(o => {
-    switch(o.itemStatus) {
+    switch(o.appStatus) {
       case 'PENDING': c.pending++; break;
       case 'ORDERED': c.ordered++; break;
       case 'SHIPPED': c.shipped++; break;
@@ -1276,7 +1274,7 @@ function invRenderTable() {
   const newInView = rows.filter(r => invNewIds.has(r.friendly_order_id)).length;
   document.getElementById('inv-rowCount').textContent = rows.length;
   document.getElementById('inv-newCount').textContent = newInView > 0 ? `+${newInView} new this upload` : '';
-  if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; invUpdateBulkBar(); return; }
+  if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
   empty.style.display = 'none';
 
   let html = '';
@@ -1286,8 +1284,8 @@ function invRenderTable() {
     const isNew = invNewIds.has(fid);
     const isMulti = o.items.length > 1;
     const isOpen = invExpanded.has(fid);
-    const isChecked = invSelected.has(fid);
-    const statusLabel = INV_STATUS_LABELS[o.itemStatus] || o.itemStatus;
+    const isRec = o.appStatus === 'RECEIVED';
+    const statusLabel = INV_STATUS_LABELS[o.appStatus] || o.appStatus;
 
     // Tracking: for single-item, show directly; for multi, show first available or —
     let tracking = '—';
@@ -1312,29 +1310,12 @@ function invRenderTable() {
     // Copy cell
     const copyCell = `<div class="copy-col"><button class="btn-copy" onclick="invCopyId('${efid}',this)">⎘ SKU</button><button class="btn-copy" onclick="invCopyIdProduct('${efid}',this)">⎘ SKU+Product</button></div>`;
 
-    // Retool popover button
-    const isComputer = o.items.some(it => (it.brand || '').toUpperCase() === 'APPLE' && (it.product_title || '').toLowerCase().includes('macbook'));
-    const savedVal = invRetoolData[fid] || '';
-    const hasData = savedVal !== '';
-    const retoolBtnLabel = isComputer ? '⌨ Enter Serials' : '# Enter Qty';
-    const retoolBtn = `
-      <div class="retool-popover-wrap" id="popwrap-${fid}">
-        <button class="btn-retool ${hasData?'ready':''}" onclick="invTogglePopover('${efid}', event)">${hasData ? '✓ ' : ''}${retoolBtnLabel}</button>
-        <div class="retool-bubble" id="bubble-${fid}">
-          <div class="retool-bubble-title">${isComputer ? 'Serial Numbers (comma-separated)' : 'Quantity Received'}</div>
-          ${isComputer
-            ? `<textarea placeholder="SN001, SN002, SN003..." id="retool-input-${fid}" onkeydown="event.stopPropagation()">${savedVal}</textarea>`
-            : `<input type="number" min="1" max="${o.totalQty||999}" value="${savedVal || (o.totalQty||'')}" id="retool-input-${fid}" onkeydown="event.stopPropagation()">`
-          }
-          <div class="bubble-actions">
-            <button class="bubble-save" onclick="invSaveRetoolData('${efid}')">Save</button>
-            <button class="bubble-cancel" onclick="invClosePopover('${efid}')">Cancel</button>
-          </div>
-        </div>
-      </div>`;
+    // Action buttons (same pattern as CS tab)
+    let actionBtn = isRec
+      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-receive done" disabled>✓ Received</button><button class="btn-unreceive" onclick="invUnreceive('${efid}')">↩ Unreceive</button><button class="btn-complete" onclick="invMarkCompleted('${efid}')">Mark Completed</button></div>`
+      : `<button class="btn-receive" onclick="invMarkReceived('${efid}')">Mark Received</button>`;
 
-    html += `<tr>
-      <td class="check-cell"><input type="checkbox" class="row-check inv-row-check" data-id="${fid}" ${isChecked?'checked':''} onchange="invToggleSelect('${efid}', this.checked)"></td>
+    html += `<tr class="${isRec?'received':''}">
       <td class="id-cell">${fid}${isNew ? '<span class="new-tag">new</span>' : ''}</td>
       <td>${o.organization || '—'}</td>
       <td class="product-cell">${productCell}</td>
@@ -1343,9 +1324,9 @@ function invRenderTable() {
       <td class="mono">${whLabel(o.warehouse)}</td>
       <td class="mono">${o.po_number || '—'}</td>
       <td class="mono" style="max-width:130px;overflow:hidden">${tracking}</td>
-      <td><span class="badge badge-${o.itemStatus}">${statusLabel}</span></td>
+      <td><span class="badge badge-${o.appStatus}">${statusLabel}</span></td>
       <td class="date-cell">${o.created_date || '—'}</td>
-      <td>${retoolBtn}</td>
+      <td>${actionBtn}</td>
     </tr>`;
 
     // Child rows for multi-item orders
@@ -1357,7 +1338,6 @@ function invRenderTable() {
         else if (it.tracking_code) itemTracking = `<span class="mono" style="max-width:100px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.tracking_code}</span>`;
         const eskuItem = (it.sku_id || '').replace(/'/g, "\\'");
         html += `<tr class="child-row">
-          <td></td>
           <td class="mono" style="color:var(--muted);font-size:11px"><span class="child-indent">└</span> Item ${idx+1}</td>
           <td></td>
           <td class="product-cell" style="font-size:12px"><span class="sku-tooltip-wrap">${it.product_title || '—'}<span class="sku-tip">SKU: ${it.sku_id || '—'}</span></span></td>
@@ -1374,95 +1354,28 @@ function invRenderTable() {
     }
   });
   tbody.innerHTML = html;
-  invUpdateBulkBar();
 }
 
-// ─── RETOOL INTEGRATION ──────────────────────────────────────────────────────
-let invSelected   = new Set();  // selected Friendly Order IDs for bulk send
-let invRetoolData = {};         // { [friendly_order_id]: serialsString | qtyString }
-
-function invToggleSelect(fid, checked) {
-  if (checked) invSelected.add(fid); else invSelected.delete(fid);
-  invUpdateBulkBar();
+// ─── INV ACTION BUTTONS ─────────────────────────────────────────────────────
+function invMarkReceived(fid) {
+  if (!invOrders[fid]) return;
+  invOrders[fid].appStatus = 'RECEIVED';
+  invOrders[fid].receivedAt = new Date().toISOString();
+  invSaveState(); invRenderAll(); showToast('Marked as Received in WH');
+  sheetsPush(INV_SHEET, fid, { app_status: 'RECEIVED', received_at: invOrders[fid].receivedAt });
 }
-function invToggleAll(checked) {
-  const checkboxes = document.querySelectorAll('.inv-row-check');
-  checkboxes.forEach(cb => {
-    const fid = cb.dataset.id;
-    cb.checked = checked;
-    if (checked) invSelected.add(fid); else invSelected.delete(fid);
-  });
-  invUpdateBulkBar();
+function invUnreceive(fid) {
+  if (!invOrders[fid]) return;
+  invOrders[fid].appStatus = invOrders[fid].itemStatus || 'ORDERED';
+  delete invOrders[fid].receivedAt;
+  invSaveState(); invRenderAll(); showToast('Marked as unreceived');
+  sheetsPush(INV_SHEET, fid, { app_status: invOrders[fid].appStatus, received_at: '' });
 }
-function invClearSelection() {
-  invSelected.clear();
-  document.querySelectorAll('.inv-row-check').forEach(cb => cb.checked = false);
-  const ca = document.getElementById('inv-checkAll'); if(ca) ca.checked = false;
-  invUpdateBulkBar();
-}
-function invUpdateBulkBar() {
-  const bar = document.getElementById('inv-bulkBar');
-  const cnt = document.getElementById('inv-bulkCount');
-  if (!bar) return;
-  if (invSelected.size > 0) { bar.classList.add('visible'); cnt.textContent = invSelected.size; }
-  else { bar.classList.remove('visible'); }
-}
-
-// Popover
-function invTogglePopover(fid, e) {
-  e.stopPropagation();
-  const bubble = document.getElementById('bubble-' + fid);
-  if (!bubble) return;
-  const isOpen = bubble.classList.contains('open');
-  document.querySelectorAll('.retool-bubble.open').forEach(b => b.classList.remove('open'));
-  if (!isOpen) {
-    const btn = e.currentTarget;
-    const rect = btn.getBoundingClientRect();
-    bubble.style.left = (rect.left + rect.width / 2 - 125) + 'px';
-    bubble.style.top = (rect.top - 8) + 'px';
-    bubble.style.transform = 'translateY(-100%)';
-    bubble.classList.add('open');
-  }
-}
-function invClosePopover(fid) {
-  const bubble = document.getElementById('bubble-' + fid);
-  if (bubble) bubble.classList.remove('open');
-}
-function invSaveRetoolData(fid) {
-  const input = document.getElementById('retool-input-' + fid);
-  if (!input) return;
-  const val = input.value.trim();
-  if (val) invRetoolData[fid] = val; else delete invRetoolData[fid];
-  invClosePopover(fid);
-  invRenderTable();
-}
-document.addEventListener('click', e => {
-  if (!e.target.closest('.retool-popover-wrap')) {
-    document.querySelectorAll('.retool-bubble.open').forEach(b => b.classList.remove('open'));
-  }
-});
-
-// ─── BULK SEND TO RETOOL ─────────────────────────────────────────────────────
-async function invBulkSend() {
-  const ids = [...invSelected];
-  if (ids.length === 0) { showToast('No orders selected'); return; }
-  const missing = ids.filter(fid => !invRetoolData[fid]);
-  if (missing.length > 0) {
-    const orders = missing.map(fid => {
-      const o = invOrders[fid];
-      return o ? (o.product_title || fid).substring(0, 40) : fid;
-    });
-    if (!confirm(`${missing.length} order(s) have no serials/qty entered:\n\n${orders.join('\n')}\n\nContinue anyway?`)) return;
-  }
-  const btn = document.getElementById('inv-bulkSendBtn');
-  btn.disabled = true;
-  btn.textContent = 'Opening Retool...';
-  const retoolUrl = 'https://firstbase.retool.com/apps/e2b95c44-ac95-11ed-86f6-9b2bac97cfc8/Ops%20Apps/Inventory%20Orders%20Management#inventory_order_id=';
-  window.open(retoolUrl, 'retool_inbound');
-  showToast(`Ready — ${ids.length} order IDs to process in Retool`);
-  try { await navigator.clipboard.writeText(ids.join(', ')); showToast(`${ids.length} order IDs copied to clipboard`); } catch(e) {}
-  btn.disabled = false;
-  btn.textContent = '⬆ Send to Retool';
+function invMarkCompleted(fid) {
+  if (!invOrders[fid]) return;
+  sheetsDelete(INV_SHEET, fid);
+  delete invOrders[fid]; invSaveState(); invRenderAll();
+  showToast('Marked as Completed — order removed');
 }
 
 // ─── CUSTOMER SUPPLIED COPY ──────────────────────────────────────────────────
