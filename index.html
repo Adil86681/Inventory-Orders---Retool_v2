@@ -316,6 +316,9 @@
   }
   .table-scroll { overflow-x: auto; overflow-y: visible; }
   table { width: 100%; border-collapse: collapse; min-width: 900px; table-layout: auto; }
+  #cs-table { table-layout: fixed; }
+  #cs-table td, #cs-table th { overflow: hidden; text-overflow: ellipsis; }
+  #cs-table td.product-cell { white-space: normal; word-break: break-word; overflow: visible; }
   thead th {
     background: var(--navy); padding: 10px 10px;
     text-align: left; font-size: 11px; font-weight: 600;
@@ -537,7 +540,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Inventory Orders</h1>
-      <p>Coventry UK · Germany EU · Oshawa CAN</p>
+      <p>All Warehouses (excl. SLC)</p>
     </div>
     <div class="page-actions">
       <button class="btn btn-primary" onclick="document.getElementById('invFileInput').click()">↑ Upload CSV</button>
@@ -560,7 +563,7 @@
     ondragleave="this.classList.remove('drag')"
     ondrop="invHandleDrop(event)"
     onclick="document.getElementById('invFileInput').click()">
-    <p>↑ <strong>Drop Inventory CSV here</strong> or click to browse — only new orders from your 3 warehouses will be added</p>
+    <p>↑ <strong>Drop Inventory CSV here</strong> or click to browse — all warehouses except SLC will be added</p>
   </div>
 
   <div class="controls">
@@ -570,11 +573,7 @@
     </div>
     <div class="ms-wrap" id="inv-warehouseWrap">
       <button class="ms-trigger" id="inv-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('inv-warehouseMenu', this)">All Warehouses</button>
-      <div class="ms-dropdown" id="inv-warehouseMenu">
-        <label class="ms-option"><input type="checkbox" value="Warehouse - Coventry UK" onchange="invRenderTable()"> Coventry UK</label>
-        <label class="ms-option"><input type="checkbox" value="Warehouse - Germany EU" onchange="invRenderTable()"> Germany EU</label>
-        <label class="ms-option"><input type="checkbox" value="Warehouse - Oshawa CAN" onchange="invRenderTable()"> Oshawa CAN</label>
-      </div>
+      <div class="ms-dropdown" id="inv-warehouseMenu"></div>
     </div>
     <div class="ms-wrap" id="inv-categoryWrap">
       <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Brands" onclick="msToggle('inv-categoryMenu', this)">All Brands</button>
@@ -637,7 +636,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Customer Supplied Orders</h1>
-      <p>Coventry UK · Germany EU · Oshawa CAN</p>
+      <p>All Warehouses (excl. SLC)</p>
     </div>
     <div class="page-actions">
       <button class="btn btn-primary" onclick="document.getElementById('csFileInput').click()">↑ Upload CSV</button>
@@ -695,7 +694,20 @@
       <div class="table-toolbar-right" id="cs-newCount"></div>
     </div>
     <div class="table-scroll">
-      <table>
+      <table id="cs-table">
+        <colgroup>
+          <col style="width:130px"><!-- Customer -->
+          <col><!-- Product - takes remaining space -->
+          <col style="width:130px"><!-- Copy -->
+          <col style="width:60px"><!-- Qty -->
+          <col style="width:130px"><!-- Warehouse -->
+          <col style="width:130px"><!-- PO Number -->
+          <col style="width:130px"><!-- Tracking -->
+          <col style="width:110px"><!-- Status -->
+          <col style="width:100px"><!-- Created Date -->
+          <col style="width:130px"><!-- Comments -->
+          <col style="width:130px"><!-- Action -->
+        </colgroup>
         <thead><tr>
           <th onclick="csSortBy('customer_name')">Customer</th>
           <th onclick="csSortBy('product_title')">Product</th>
@@ -999,8 +1011,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Wire up static dropdowns (status menus); dynamic ones are wired after population
   wireMsCheckboxes(document.getElementById('inv-statusMenu'));
   wireMsCheckboxes(document.getElementById('cs-statusMenu'));
-  // Wire static inv warehouse menu
-  wireMsCheckboxes(document.getElementById('inv-warehouseMenu'));
 });
 function wireMsCheckboxes(menu) {
   if (!menu) return;
@@ -1052,7 +1062,7 @@ function msOnChange(cb, allLabel) {
 }
 
 // ─── INVENTORY ORDERS (continued) ────────────────────────────────────────────
-const INV_ALLOWED_WH    = new Set(['Warehouse - Coventry UK','Warehouse - Germany EU','Warehouse - Oshawa CAN']);
+const INV_BLOCKED_WH    = new Set(['Warehouse - SLC']);  // exclude SLC, allow all others
 
 // invOrders: keyed by Friendly Order ID → { ...groupMeta, items: [...] }
 let invOrders  = {};
@@ -1082,7 +1092,7 @@ function invProcessFile(file) {
       const fid = (row['Friendly Order ID'] || '').trim();
       if (!fid) return;
       const wh = (row['Ship-to Warehouse'] || '').trim();
-      if (!INV_ALLOWED_WH.has(wh)) return;
+      if (INV_BLOCKED_WH.has(wh)) return;
       if (!grouped[fid]) grouped[fid] = [];
       grouped[fid].push(row);
     });
@@ -1203,6 +1213,8 @@ function invToggleExpand(fid) {
 }
 
 function invUpdateFilters() {
+  const whs = [...new Set(Object.values(invOrders).map(o => o.warehouse).filter(Boolean))].sort();
+  msPopulateDynamic('inv-warehouseMenu', 'inv-warehouseTrigger', whs, 'All Warehouses');
   const cats = [...new Set(Object.values(invOrders).flatMap(o => o.items.map(it => it.brand)).filter(Boolean))].sort();
   msPopulateDynamic('inv-categoryMenu', 'inv-categoryTrigger', cats, 'All Categories');
   const custs = [...new Set(Object.values(invOrders).map(o => o.organization).filter(Boolean))].sort();
@@ -1421,6 +1433,8 @@ function csProcessFile(file) {
     const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
     rows.forEach(row => {
       const id = row.shipment_notice_package_item_id; if (!id) return;
+      const csWh = (row.warehouse_name || '').trim();
+      if (csWh.toLowerCase().includes('slc')) return;  // exclude SLC
       const pkgStatus = (row.shipment_notice_package_item_status||'').toUpperCase();
       // Skip Partially Received older than 3 months
       if (pkgStatus === 'PARTIALLY_RECEIVED') {
