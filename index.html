@@ -882,7 +882,7 @@ async function invFetchFromAPI() {
   setSyncStatus('syncing', 'Fetching orders…');
   try {
     const allOrders = [];
-    let pageNumber = 0;
+    let pageNumber = 1;
     const pageSize = 100;
     let hasMore = true;
 
@@ -903,14 +903,14 @@ async function invFetchFromAPI() {
       notes
       organization { id name }
       warehouse { id name }
-      sku { id title brand { name } }
-      submittedBy { firstName lastName email }
+      sku { id vendorSku skuInformation { productTitle partNumber } vendor { name } category { nameSingular } }
+      submittedBy { forename surname email }
       inventoryOrderItems {
         id quantity status
-        sku { id title mpn brand { name } }
+        sku { id vendorSku skuInformation { productTitle partNumber } vendor { name } category { nameSingular } }
       }
       inventoryOrderShipments {
-        id status trackingCode trackingUrl carrier estimatedDeliveryDate
+        id status trackingCode trackingUrl shippingCarrier estimatedDeliveryDate
       }
     }
     totalElements totalPages pageNumber size
@@ -969,14 +969,14 @@ async function invFetchFromAPI() {
 
       const items = (order.inventoryOrderItems || []).map(item => ({
         order_item_id: item.id || '',
-        brand: item.sku?.brand?.name || '',
-        product_title: item.sku?.title || '',
+        brand: item.sku?.vendor?.name || '',
+        product_title: item.sku?.skuInformation?.productTitle || '',
         quantity: item.quantity || 0,
         unit_price: '',
         total_price: '',
         item_status: item.status || 'ORDERED',
         sku_id: item.sku?.id || '',
-        mpn: item.sku?.mpn || '',
+        mpn: item.sku?.skuInformation?.partNumber || item.sku?.vendorSku || '',
         shipment_id: '',
         shipment_status: '',
         est_delivery: '',
@@ -991,7 +991,7 @@ async function invFetchFromAPI() {
           if (idx < items.length) {
             items[idx].shipment_id = shipment.id || '';
             items[idx].shipment_status = shipment.status || '';
-            items[idx].carrier = shipment.carrier || '';
+            items[idx].carrier = shipment.shippingCarrier || '';
             items[idx].tracking_code = shipment.trackingCode || '';
             items[idx].tracking_url = shipment.trackingUrl || '';
             items[idx].est_delivery = shipment.estimatedDeliveryDate || '';
@@ -1019,7 +1019,7 @@ async function invFetchFromAPI() {
         order_status: order.status || '',
         reason: order.reason || '',
         submitted_by: order.submittedBy
-          ? `${order.submittedBy.firstName || ''} ${order.submittedBy.lastName || ''}`.trim()
+          ? `${order.submittedBy.forename || ''} ${order.submittedBy.surname || ''}`.trim()
           : '',
         totalQty: totalQty,
         itemStatus: primaryStatus,
