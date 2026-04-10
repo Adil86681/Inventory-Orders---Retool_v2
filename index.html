@@ -620,7 +620,6 @@
           <th>Tracking</th>
           <th onclick="invSortBy('itemStatus')">Status</th>
           <th onclick="invSortBy('created_date')">Created</th>
-          <th>Action</th>
         </tr></thead>
         <tbody id="inv-tableBody"></tbody>
       </table>
@@ -785,11 +784,11 @@
     <div class="table-scroll" id="ps-tableWrap" style="display:none">
       <table>
         <thead><tr>
+          <th>Copy</th>
           <th onclick="psSort('sku_id')">SKU ID</th>
           <th onclick="psSort('desc')">Description</th>
           <th onclick="psSort('mpn')">MPN / Vendor SKU</th>
           <th onclick="psSort('cat')">Category</th>
-          <th>Copy</th>
         </tr></thead>
         <tbody id="ps-tableBody"></tbody>
       </table>
@@ -1202,10 +1201,6 @@ function invRenderTable() {
 
     const copyCell = `<div class="copy-col"><button class="btn-copy" onclick="invCopyId('${efid}',this)">⎘ SKU</button><button class="btn-copy" onclick="invCopyIdProduct('${efid}',this)">⎘ SKU+Product</button></div>`;
 
-    let actionBtn = isRec
-      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button class="btn-receive done" disabled>✓ Received</button><button class="btn-unreceive" onclick="invUnreceive('${efid}')">↩ Unreceive</button><button class="btn-complete" onclick="invMarkCompleted('${efid}')">Mark Completed</button></div>`
-      : `<button class="btn-receive" onclick="invMarkReceived('${efid}')">Mark Received</button>`;
-
     html += `<tr class="${isRec?'received':''}">
       <td class="id-cell">${fid}</td>
       <td>${o.organization || '—'}</td>
@@ -1217,7 +1212,6 @@ function invRenderTable() {
       <td class="mono" style="max-width:130px;overflow:hidden">${tracking}</td>
       <td><span class="badge badge-${o.appStatus}">${statusLabel}</span></td>
       <td class="date-cell">${o.created_date || '—'}</td>
-      <td>${actionBtn}</td>
     </tr>`;
 
     if (isMulti && isOpen) {
@@ -1238,7 +1232,6 @@ function invRenderTable() {
           <td style="max-width:100px;overflow:hidden">${itemTracking}</td>
           <td><span class="badge badge-${it.item_status}">${itemStatusLabel}</span></td>
           <td class="date-cell" style="font-size:10px">${it.est_delivery || '—'}</td>
-          <td></td>
         </tr>`;
       });
     }
@@ -1415,6 +1408,11 @@ async function csFetchFromAPI() {
     console.error('CS API fetch error:', err);
   }
 }
+function csToggleExpand(fid) {
+  if (csExpanded.has(fid)) csExpanded.delete(fid); else csExpanded.add(fid);
+  csRenderTable();
+}
+
 function csMarkReceived(fid) {
   if (!csOrders[fid]) return;
   csOrders[fid].appStatus='RECEIVED'; csOrders[fid].receivedAt=new Date().toISOString();
@@ -1489,9 +1487,13 @@ function csRenderTable() {
   document.getElementById('cs-newCount').textContent='';
   if(rows.length===0){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  tbody.innerHTML=rows.map(o=>{
+
+  let html = '';
+  rows.forEach(o => {
     const fid=o.friendly_order_id;
     const isRec=o.appStatus==='RECEIVED';
+    const isMulti = o.items && o.items.length > 1;
+    const isOpen = csExpanded.has(fid);
     const statusLabel = CS_STATUS_LABELS[o.appStatus] || o.appStatus;
     const efid=fid.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const ceprod=(o.product_title||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
@@ -1508,9 +1510,19 @@ function csRenderTable() {
       else tracking=`<span class="mono" style="max-width:120px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${trackedPkg.trackingCode}">${trackedPkg.trackingCode}</span>`;
     }
 
-    return `<tr class="${isRec?'received':''}">
+    let productCell;
+    if (isMulti) {
+      productCell = `<button class="expand-toggle" onclick="csToggleExpand('${efid}')">
+        <span class="expand-arrow ${isOpen?'open':''}">▶</span>
+        ${o.items.length} items
+      </button><span class="item-count-chip">${o.totalQty} units</span>`;
+    } else {
+      productCell = `<span class="sku-tooltip-wrap">${o.product_title||'—'}<span class="sku-tip">SKU: ${o.sku_id||'—'}</span></span>`;
+    }
+
+    html += `<tr class="${isRec?'received':''}">
       <td>${o.organization||'—'}</td>
-      <td class="product-cell"><span class="sku-tooltip-wrap">${o.product_title||'—'}<span class="sku-tip">SKU: ${o.sku_id||'—'}</span></span></td>
+      <td class="product-cell">${productCell}</td>
       <td class="copy-col-cell"><div class="copy-col"><button class="btn-copy" onclick="csCopyId('${efid}',this)">⎘ SKU</button><button class="btn-copy" onclick="csCopyIdProduct('${efid}','${ceprod}',this)">⎘ SKU+Product</button></div></td>
       <td class="mono">${o.totalQty||'—'}</td>
       <td class="mono">${whLabel(o.warehouse||'')}</td>
@@ -1520,7 +1532,28 @@ function csRenderTable() {
       <td class="date-cell">${fmtDate(o.created_date)}</td>
       <td class="comment-cell">${commentInput(fid)}</td>
       <td>${btn}</td></tr>`;
-  }).join('');
+
+    if (isMulti && isOpen) {
+      o.items.forEach((it, idx) => {
+        const itemStatusLabel = CS_STATUS_LABELS[it.item_status] || it.item_status || '';
+        const eskuItem = (it.sku_id || '').replace(/'/g, "\\'");
+        html += `<tr class="child-row">
+          <td class="mono" style="color:var(--muted);font-size:11px"><span class="child-indent">└</span> Item ${idx+1}</td>
+          <td class="product-cell" style="font-size:12px"><span class="sku-tooltip-wrap">${it.product_title||'—'}<span class="sku-tip">SKU: ${it.sku_id||'—'}</span></span></td>
+          <td><button class="btn-copy" onclick="invCopyItemSku('${eskuItem}',this)" style="font-size:9px">⎘</button></td>
+          <td class="mono">${it.quantity}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td>${itemStatusLabel ? `<span class="badge badge-${it.item_status||''}">${itemStatusLabel}</span>` : ''}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>`;
+      });
+    }
+  });
+  tbody.innerHTML = html;
 }
 
 function csCopyId(id, btn) {
@@ -1696,14 +1729,16 @@ function psRender() {
 
   tbody.innerHTML = displayed.map(r => {
     const esku = escHtml(r.sku_id);
+    const edesc = escHtml(r.desc);
     return `<tr>
+      <td style="white-space:nowrap"><div class="copy-col">
+        <button class="btn-copy" onclick="psCopySku('${esku}', this)">⎘ SKU</button>
+        <button class="btn-copy" onclick="psCopySkuDesc('${esku}', this)" data-desc="${edesc}">⎘ SKU+Desc</button>
+      </div></td>
       <td class="ps-sku-cell">${psHighlight(r.sku_id, tokens)}</td>
       <td class="ps-desc-cell">${psHighlight(r.desc, tokens)}</td>
       <td class="ps-mpn-cell">${psHighlight(r.mpn, tokens)}</td>
       <td class="ps-cat-cell"><span class="badge" style="background:rgba(91,132,255,0.08);border:1px solid rgba(91,132,255,0.2);color:var(--accent2)">${psHighlight(r.cat, tokens)}</span></td>
-      <td style="white-space:nowrap">
-        <button class="btn-copy" onclick="psCopySku('${esku}', this)">⎘ SKU</button>
-      </td>
     </tr>`;
   }).join('');
 }
@@ -1712,6 +1747,14 @@ function psCopySku(sku, btn) {
   navigator.clipboard.writeText(sku).then(() => {
     btn.textContent = '✓ copied'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = '⎘ SKU'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+function psCopySkuDesc(sku, btn) {
+  const desc = btn.dataset.desc || '';
+  navigator.clipboard.writeText(sku + '\n' + desc).then(() => {
+    btn.textContent = '✓ copied'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ SKU+Desc'; btn.classList.remove('copied'); }, 1800);
   });
 }
 
