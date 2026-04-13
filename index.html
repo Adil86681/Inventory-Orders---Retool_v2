@@ -1866,8 +1866,19 @@ function adilLoadFrame() {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const html = new TextDecoder('utf-8').decode(bytes);
-  frame.srcdoc = html;
+  let html = new TextDecoder('utf-8').decode(bytes);
+  // Inject <base href> so relative API paths (/api/jira, /api/google/*) resolve
+  // to the parent page's origin instead of about:srcdoc.
+  const baseTag = '<base href="' + location.href + '">';
+  if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(/<head([^>]*)>/i, '<head$1>' + baseTag);
+  } else {
+    html = baseTag + html;
+  }
+  // Use a blob URL (same-origin as parent) instead of srcdoc (opaque origin),
+  // so fetch() calls from inside the iframe hit the real backend.
+  const blob = new Blob([html], { type: 'text/html' });
+  frame.src = URL.createObjectURL(blob);
   adilLoaded = true;
 }
 function updateTabCounts() {
