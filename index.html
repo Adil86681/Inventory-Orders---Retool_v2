@@ -241,6 +241,15 @@
   .c-amber  { color: var(--amber);  } .c-purple{ color: var(--purple);}
   .c-text   { color: var(--text);   } .c-red   { color: var(--red);   }
 
+
+  .pm-copy-btn {
+    font-size: 10px; font-family: var(--mono); font-weight: 500;
+    padding: 1px 7px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--surface3);
+    color: var(--muted); cursor: pointer; white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .pm-copy-btn:hover { border-color: var(--accent); color: var(--accent2); background: rgba(61,111,255,0.08); }
   .upload-area {
     background: var(--surface); border: 2px dashed var(--border);
     border-radius: 10px; padding: 18px 24px; text-align: center;
@@ -2472,66 +2481,158 @@ function pmCompare() {
 
 function pmRenderTable(tableId, pos, mgmtMap, grvMap, isMatched) {
   const tbl = document.getElementById(tableId);
-  const cols = isMatched
-    ? ['PO Number','Client','Product','Qty','Status','Warehouse','Serials (MSN)']
-    : ['PO Number','Client','Product','Qty','Status','Warehouse','Expected Ship'];
 
-  let html = '<thead><tr>';
-  cols.forEach(c => { html += '<th>' + c + '</th>'; });
-  html += '</tr></thead><tbody>';
+  if (!isMatched) {
+    // Unmatched: simple flat table
+    const cols = ['PO Number','Client','Product','MPN','Qty','Status','Warehouse','Expected Ship'];
+    let html = '<thead><tr>';
+    cols.forEach(c => { html += '<th>' + c + '</th>'; });
+    html += '</tr></thead><tbody>';
+    if (pos.length === 0) {
+      html += '<tr><td colspan="' + cols.length + '" style="text-align:center;padding:32px;color:var(--muted);">No entries</td></tr>';
+    }
+    pos.slice().sort().forEach(po => {
+      const m = mgmtMap[po] || {};
+      const badge = pmStatusBadge(m['Order Item Status'] || '—');
+      const wh = (m['Ship-to Warehouse'] || '—').replace('Warehouse - ','').replace('Warehouse ','');
+      html += '<tr>' +
+        '<td><span style="font-family:var(--mono);font-size:12px;">' + po + '</span></td>' +
+        '<td>' + (m['i'] || '—') + '</td>' +
+        '<td style="max-width:240px;">' + (m['Product Title'] || '—').substring(0,50) + '</td>' +
+        '<td><span style="font-family:var(--mono);font-size:11px;">' + (m['MPN'] || '—') + '</span></td>' +
+        '<td style="text-align:center;">' + (m['Order Item Quantity'] || '—') + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td>' + wh + '</td>' +
+        '<td>' + (m['Expected Ship Date'] || '—') + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+    return;
+  }
+
+  // Matched: two-block card layout per PO
+  tbl.style.display = 'none';
+  const container = tbl.parentElement;
+
+  // Remove old cards
+  let oldCards = container.querySelector('.pm-cards');
+  if (oldCards) oldCards.remove();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'pm-cards';
 
   if (pos.length === 0) {
-    html += '<tr><td colspan="' + cols.length + '" style="text-align:center;padding:32px;color:var(--muted);">No entries</td></tr>';
+    wrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">No matched POs</div>';
+    container.appendChild(wrap);
+    return;
   }
 
-  const sorted = pos.slice().sort();
-  for (const po of sorted) {
+  pos.slice().sort().forEach(po => {
     const m = mgmtMap[po] || {};
-    const gRows = isMatched ? (grvMap[po] || []) : [];
-    const status = m['Order Item Status'] || '—';
-    const badge = pmStatusBadge(status);
-    const product = (m['Product Title'] || '—').substring(0, 52);
-    const wh = (m['Ship-to Warehouse'] || '—').replace('Warehouse - ','').replace('Warehouse ','');
+    const gRows = grvMap[po] || [];
 
-    // Build serials cell
+    // Gather GRV details (may be multiple rows = multiple serials/items)
+    const grvItemCodes  = [...new Set(gRows.map(r => r['ITEM_CODE'] || r['MANUFACTURER_PART_NUMBER'] || '').filter(Boolean))];
+    const grvMPNs       = [...new Set(gRows.map(r => r['MANUFACTURER_PART_NUMBER'] || '').filter(s => s && s !== '.'))];
+    const grvDescs      = [...new Set(gRows.map(r => r['ITEM_DESCRIPTION'] || '').filter(Boolean))];
+    const grvBrands     = [...new Set(gRows.map(r => r['BRAND_NAME'] || '').filter(Boolean))];
+    const grvQty        = gRows.reduce((acc, r) => acc + (parseInt(r['QUANTITY']) || 0), 0);
+    const grvSerials    = gRows.map(r => (r['MSN'] || '')).filter(s => s && s !== '.' && s !== 'None');
+
+    // MPN match check
+    const retoolMPN = (m['MPN'] || '').trim();
+    const mpnMatch  = grvMPNs.length > 0 && retoolMPN
+      ? grvMPNs.some(g => g.trim().toLowerCase() === retoolMPN.toLowerCase())
+      : null; // null = can't determine
+
+    const matchBadgeHtml = mpnMatch === true
+      ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(22,163,74,0.12);color:var(--green);border:1px solid rgba(22,163,74,0.3);">✓ MPN Match</span>'
+      : mpnMatch === false
+        ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(220,38,38,0.1);color:var(--red);border:1px solid rgba(220,38,38,0.25);">⚠ MPN Mismatch</span>'
+        : '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--surface3);color:var(--muted);border:1px solid var(--border);">— No MPN</span>';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;';
+
+    // Card header
+    const headerDiv = document.createElement('div');
+    headerDiv.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;';
+    headerDiv.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);">PO ' + po + '</span>' +
+        matchBadgeHtml +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        pmStatusBadge(m['Order Item Status'] || '—') +
+        '<span style="font-size:12px;color:var(--muted);">' + (m['i'] || '') + '</span>' +
+      '</div>';
+    card.appendChild(headerDiv);
+
+    // Two-block body
+    const bodyDiv = document.createElement('div');
+    bodyDiv.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;';
+
+    // ── LEFT BLOCK: Retool ──
+    const leftBlock = document.createElement('div');
+    leftBlock.style.cssText = 'padding:16px 20px;border-right:1px solid var(--border);';
+    leftBlock.innerHTML =
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent2);margin-bottom:12px;">📋 Ordered (Retool/MGMT)</div>' +
+      pmField('Product',   m['Product Title'] || '—') +
+      pmField('MPN',       m['MPN'] || '—', true) +
+      pmField('SKU',       m['SKU ID'] || '—', true) +
+      pmField('Qty Ordered', m['Order Item Quantity'] || '—') +
+      pmField('Warehouse', (m['Ship-to Warehouse'] || '—').replace('Warehouse - ','').replace('Warehouse ','')) +
+      pmField('Exp. Ship', m['Expected Ship Date'] || '—') +
+      pmField('Order ID',  m['Friendly Order ID'] || '—', true);
+
+    // ── RIGHT BLOCK: GRV ──
+    const rightBlock = document.createElement('div');
+    rightBlock.style.cssText = 'padding:16px 20px;';
+
     let serialsHtml = '';
-    if (isMatched) {
-      const serials = gRows.map(r => (r['MSN'] || '')).filter(s => s && s !== '.' && s !== 'None');
-      if (serials.length === 0) {
-        serialsHtml = '<span style="color:var(--muted);font-size:11px;">—</span>';
-      } else {
-        const uid = 'pm-ser-' + po;
-        const allSerial = serials.join('\n');
-        serialsHtml += '<div style="display:flex;flex-direction:column;gap:4px;">';
-        serials.forEach((s, i) => {
-          serialsHtml += '<div style="display:flex;align-items:center;gap:6px;">' +
-            '<span style="font-family:var(--mono);font-size:11px;color:var(--text);">' + s + '</span>' +
-            '<button onclick="pmCopyText(\'' + s.replace(/'/g,"\\'") + '\',this)" style="font-size:10px;font-family:var(--mono);font-weight:500;padding:1px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface3);color:var(--muted);cursor:pointer;white-space:nowrap;transition:all 0.15s;" onmouseover="this.style.borderColor=\'var(--accent)\';this.style.color=\'var(--accent2)\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--muted)\';">copy</button>' +
-            '</div>';
-        });
-        if (serials.length > 1) {
-          serialsHtml += '<button onclick="pmCopyText(\'' + serials.join('\\n').replace(/'/g,"\\'") + '\',this)" style="font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:4px;border:1px solid rgba(61,111,255,0.3);background:rgba(61,111,255,0.08);color:var(--accent2);cursor:pointer;margin-top:2px;transition:all 0.15s;">copy all (' + serials.length + ')</button>';
-        }
-        serialsHtml += '</div>';
+    if (grvSerials.length === 0) {
+      serialsHtml = '<span style="color:var(--muted);font-size:12px;">—</span>';
+    } else {
+      serialsHtml = '<div style="display:flex;flex-direction:column;gap:5px;margin-top:2px;">';
+      grvSerials.forEach(s => {
+        const sid = 'ser-' + po + '-' + s.replace(/[^a-z0-9]/gi,'');
+        serialsHtml +=
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-family:var(--mono);font-size:12px;color:var(--text);">' + s + '</span>' +
+          '<button data-serial="' + s + '" onclick="pmCopyText(\'' + s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\',this)" class="pm-copy-btn">copy</button>' +
+          '</div>';
+      });
+      if (grvSerials.length > 1) {
+        const allEscaped = grvSerials.join('\\n').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        serialsHtml += '<button onclick="pmCopyText(\'' + allEscaped + '\',this)" class="pm-copy-btn" style="align-self:flex-start;color:var(--accent2);border-color:rgba(61,111,255,0.3);background:rgba(61,111,255,0.08);">copy all (' + grvSerials.length + ')</button>';
       }
+      serialsHtml += '</div>';
     }
 
-    html += '<tr>';
-    html += '<td><span style="font-family:var(--mono);font-size:12px;">' + po + '</span></td>';
-    html += '<td>' + (m['i'] || '—') + '</td>';
-    html += '<td style="max-width:260px;">' + product + '</td>';
-    html += '<td style="text-align:center;">' + (m['Order Item Quantity'] || '—') + '</td>';
-    html += '<td>' + badge + '</td>';
-    html += '<td>' + wh + '</td>';
-    if (isMatched) {
-      html += '<td>' + serialsHtml + '</td>';
-    } else {
-      html += '<td>' + (m['Expected Ship Date'] || '—') + '</td>';
-    }
-    html += '</tr>';
-  }
-  html += '</tbody>';
-  tbl.innerHTML = html;
+    rightBlock.innerHTML =
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--green);margin-bottom:12px;">📦 Received (GRV)</div>' +
+      pmField('Item Description', grvDescs.join(', ') || '—') +
+      pmField('MPN (GRV)',        grvMPNs.join(', ') || '—', true) +
+      pmField('Item Code',        grvItemCodes.join(', ') || '—', true) +
+      pmField('Brand',            grvBrands.join(', ') || '—') +
+      pmField('Qty Received',     grvQty || '—') +
+      '<div style="margin-bottom:10px;"><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Serials (MSN)</div>' + serialsHtml + '</div>';
+
+    bodyDiv.appendChild(leftBlock);
+    bodyDiv.appendChild(rightBlock);
+    card.appendChild(bodyDiv);
+    wrap.appendChild(card);
+  });
+
+  container.appendChild(wrap);
+}
+
+function pmField(label, value, mono) {
+  return '<div style="margin-bottom:10px;">' +
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">' + label + '</div>' +
+    '<div style="font-size:13px;' + (mono ? 'font-family:var(--mono);font-size:12px;' : '') + 'color:var(--text);word-break:break-word;">' + value + '</div>' +
+    '</div>';
 }
 
 function pmCopyText(text, btn) {
@@ -2548,19 +2649,6 @@ function pmCopyText(text, btn) {
       btn.style.background = '';
     }, 1800);
   });
-}
-
-function pmStatusBadge(status) {
-  const map = {
-    ORDERED: ['var(--purple)','rgba(124,58,237,0.12)'],
-    SHIPPED: ['var(--amber)','rgba(217,119,6,0.12)'],
-    OUT_FOR_DELIVERY: ['var(--green)','rgba(22,163,74,0.12)'],
-    ARRIVED_AT_PROCESSING_FACILITY: ['var(--green)','rgba(22,163,74,0.12)'],
-    CANCELLED: ['var(--red)','rgba(220,38,38,0.1)'],
-    RECEIVED: ['var(--green)','rgba(22,163,74,0.15)'],
-  };
-  const col = map[status] || ['var(--muted)','var(--surface3)'];
-  return '<span style="font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:20px;white-space:nowrap;background:' + col[1] + ';color:' + col[0] + ';">' + status.replace(/_/g,' ') + '</span>';
 }
 
 function pmShowResultTab(tab) {
