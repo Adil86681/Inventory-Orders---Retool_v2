@@ -1,13 +1,5 @@
 {
-  "name": "inbound-tracker-live",
+  "name": "inbound-order-tracker",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'No build step needed'",
-    "start": "vercel dev"
-  },
-  "dependencies": {
-    "node-fetch": "2.7.0"
-  }
+  "private": true
 }

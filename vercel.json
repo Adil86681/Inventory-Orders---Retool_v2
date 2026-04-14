@@ -1,9 +1,5 @@
 {
-  "version": 2,
-  "buildCommand": "",
-  "outputDirectory": "public",
-  "framework": null,
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/api/graphql", "destination": "/api/graphql" }
   ]
 }

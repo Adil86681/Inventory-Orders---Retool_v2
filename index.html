@@ -960,38 +960,9 @@
 
 <script>
 // ─── API CONFIG ──────────────────────────────────────────────────────────────
-const API_GRAPHQL_URL = 'https://api.firstbasehq.com/graphql';
-const AUTH_TOKEN_URL  = 'https://auth.firstbasehq.com/oauth2/default/v1/token';
-const AUTH_BASIC      = 'Basic MG9hdTA0ajNic3ZlNnZwanc1ZDc6TWl3RTBtU3g5TWlDRFQ1c2M5TlJDZktNMnN2SjBkZ0dZUWxqQTc3ZHhkNUNuZU0tSnpmSF9PS1c2b1AzZk1HSQ==';
-const AUTH_SCOPE      = 'firstbase:service-accounts';
+const API_GRAPHQL_URL = '/api/graphql';  // Proxied through Node.js server (handles OAuth)
 const MGMT_SHEET_ID   = '1iN9TeaadP4UPqOUrvUKRRkD4-CK3CLNncYQ-Xl2ohck';
 const SKU_CATALOG_GID = '1220759584';
-
-// ─── TOKEN MANAGEMENT ───────────────────────────────────────────────────────
-let cachedToken = null;
-let tokenExpiresAt = 0;
-
-async function getAccessToken() {
-  if (cachedToken && Date.now() < tokenExpiresAt - 60000) {
-    return cachedToken;
-  }
-  const res = await fetch(AUTH_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': AUTH_BASIC
-    },
-    body: 'grant_type=client_credentials&scope=' + encodeURIComponent(AUTH_SCOPE)
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error('Token request failed (' + res.status + '): ' + errText);
-  }
-  const data = await res.json();
-  cachedToken = data.access_token;
-  tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
-  return cachedToken;
-}
 
 // ─── SYNC STATE ──────────────────────────────────────────────────────────────
 let refreshCountdown = 60;
@@ -1058,7 +1029,6 @@ function invClearAll()   {
 async function invFetchFromAPI() {
   setSyncStatus('syncing', 'Fetching orders…');
   try {
-    const token = await getAccessToken();
     const allOrders = [];
     let pageNumber = 1;
     const pageSize = 100;
@@ -1109,10 +1079,7 @@ async function invFetchFromAPI() {
 
       const res = await fetch(API_GRAPHQL_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables })
       });
 
@@ -1459,7 +1426,6 @@ function csClearAll()   {
 
 async function csFetchFromAPI() {
   try {
-    const token = await getAccessToken();
     const allOrders = [];
     let pageNumber = 1;
     const pageSize = 100;
@@ -1503,10 +1469,7 @@ async function csFetchFromAPI() {
 
       const res = await fetch(API_GRAPHQL_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables })
       });
 
