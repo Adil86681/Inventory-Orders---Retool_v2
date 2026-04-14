@@ -2,8 +2,7 @@
  * Vercel Serverless Function — /api/graphql
  *
  * Proxies GraphQL requests to the Firstbase API.
- * Handles OAuth client_credentials token exchange server-side
- * (required because Firstbase auth blocks browser token requests).
+ * Handles OAuth client_credentials token exchange server-side.
  */
 
 const AUTH_TOKEN_URL = 'https://auth.firstbasehq.com/oauth2/default/v1/token';
@@ -11,7 +10,6 @@ const AUTH_BASIC     = 'Basic MG9hdTA0ajNic3ZlNnZwanc1ZDc6TWl3RTBtU3g5TWlDRFQ1c2
 const AUTH_SCOPE     = 'firstbase:service-accounts';
 const GRAPHQL_URL    = 'https://api.firstbasehq.com/graphql';
 
-// Token cache (persists across warm invocations on the same Vercel instance)
 let cachedToken    = null;
 let tokenExpiresAt = 0;
 
@@ -26,12 +24,12 @@ async function getAccessToken() {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': AUTH_BASIC
     },
-    body: `grant_type=client_credentials&scope=${encodeURIComponent(AUTH_SCOPE)}`
+    body: 'grant_type=client_credentials&scope=' + encodeURIComponent(AUTH_SCOPE)
   });
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Token request failed (${res.status}): ${errBody}`);
+    throw new Error('Token failed (' + res.status + '): ' + errBody);
   }
 
   const data = await res.json();
@@ -40,7 +38,15 @@ async function getAccessToken() {
   return cachedToken;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -52,15 +58,15 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify(req.body)
     });
 
     const data = await apiRes.json();
-    res.status(apiRes.status).json(data);
+    return res.status(apiRes.status).json(data);
   } catch (err) {
-    console.error('[api/graphql] Proxy error:', err.message);
-    res.status(502).json({ error: err.message });
+    console.error('[api/graphql] Error:', err);
+    return res.status(502).json({ error: String(err.message || err) });
   }
-}
+};
