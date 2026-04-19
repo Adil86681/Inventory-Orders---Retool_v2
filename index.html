@@ -2862,10 +2862,10 @@ function fbinvBuildColMap(headers) {
     genericCategory:  find(['genericcategory','productcategory','category'],['genericcategory','productcategory','category']),
     skuId:            find(['skuid','sku'],                                 null),
     // Employee: try a combined full-name column first, then forename only
-    employeeName:     find(['employeename','personname','personforename','forename','firstname','assignedto','fullname'], ['employeename','personname','forename','employee']),
+    employeeName:     find(['employeename','personname','personforename','forename','firstname','fullname'], ['employeename','personname','forename','employee']),
     employeeSurname:  find(['personsurname','surname','lastname'],          ['surname','lastname']),
     organizationName: find(['organizationname','organisationname','orgname','companyname'], ['organization','organisation','orgname','company']),
-    warehouseName:    find(['warehousename','warehouselocation'],           ['warehouse']),
+    warehouseName:    find(['warehousename','warehouselocation','assignedto','assigned_to'], ['warehouse','assignedto']),
     vendorName:       find(['vendorname','suppliername'],                   ['vendor','supplier']),
     regionName:       find(['regionname','region'],                        null),
     officeName:       find(['officename'],                                  ['office']),
@@ -2982,16 +2982,10 @@ function fbinvLoadCSV(text, filename) {
   of_.innerHTML = '<option value="">All Orgs</option>' +
     uniq('organizationName').map(s => `<option value="${s}">${s}</option>`).join('');
 
-  // Warehouse filter — read directly from the raw CSV column to avoid any fbinvGet indirection
+  // Warehouse filter
   const wf = document.getElementById('fbinv-warehouseFilter');
-  const _whCol = fbinvColMap.warehouseName;
-  console.log('[fbinv] warehouseName mapped to CSV col:', _whCol);
-  const _whVals = _whCol
-    ? [...new Set(data.map(r => (r[_whCol] || '').trim()).filter(Boolean))].sort()
-    : [];
-  console.log('[fbinv] warehouse unique values:', _whVals);
   wf.innerHTML = '<option value="">All Warehouses</option>' +
-    _whVals.map(s => `<option value="${s}">${s}</option>`).join('');
+    uniq('warehouseName').map(s => `<option value="${s}">${s}</option>`).join('');
 
   // Stats
   const ns = s => (s||'').toUpperCase().replace(/[\s-]/g,'_');
@@ -3015,7 +3009,7 @@ function fbinvLoadCSV(text, filename) {
     { key:'skuId',           label:'SKU ID' },
     { key:'deployStatus',    label:'Status' },
     { key:'conditionStatus', label:'Condition' },
-    { key:'employeeName',    label:'Warehouse' },
+    { key:'warehouseName',   label:'Warehouse' },
     { key:'organizationName',label:'Organisation' },
     { key:'regionName',      label:'Region' },
     { key:'createdAt',       label:'Created' },
@@ -3055,7 +3049,7 @@ function fbinvBuildMappingPanel(headers) {
     productTitle:     'Product Title',
     genericCategory:  'Category',
     skuId:            'SKU ID',
-    employeeName:     'Warehouse',
+    employeeName:     'Employee',
     employeeSurname:  'Employee Surname',
     organizationName: 'Organisation',
     warehouseName:    'Warehouse',
