@@ -953,6 +953,12 @@
       <select class="fbinv-select" id="fbinv-conditionFilter" onchange="fbinvPage=1;fbinvRender()">
         <option value="">All Conditions</option>
       </select>
+      <select class="fbinv-select" id="fbinv-orgFilter" onchange="fbinvPage=1;fbinvRender()" style="max-width:200px;">
+        <option value="">All Orgs</option>
+      </select>
+      <select class="fbinv-select" id="fbinv-warehouseFilter" onchange="fbinvPage=1;fbinvRender()" style="max-width:180px;">
+        <option value="">All Warehouses</option>
+      </select>
     </div>
 
     <div class="table-wrap">
@@ -2807,38 +2813,50 @@ let fbinvPage        = 1;
 let fbinvHeaders     = [];   // original CSV headers
 let fbinvColMap      = {};   // logical name → actual header
 
-// Normalise a header string for fuzzy matching
-function fbinvNorm(s) { return s.toLowerCase().replace(/[^a-z0-9]/g,''); }
-
-// Try to find which actual header matches a list of candidate normalised names
-function fbinvFindCol(candidates) {
-  for (const h of fbinvHeaders) {
-    const n = fbinvNorm(h);
-    if (candidates.some(c => n === c || n.includes(c))) return h;
-  }
-  return null;
-}
-
-// Build logical → header mapping from whatever Retool exports
+// Build logical → header mapping with strict exact-first matching.
+// Each CSV column can only be claimed by ONE logical field (first match wins).
 function fbinvBuildColMap(headers) {
   fbinvHeaders = headers;
+  const used = new Set();
+  const n = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  function find(exacts, prefixes) {
+    // Pass 1: exact normalised match
+    for (const h of headers) {
+      if (used.has(h)) continue;
+      if (exacts.includes(n(h))) { used.add(h); return h; }
+    }
+    // Pass 2: starts-with prefix, but NEVER match columns that end with "id"
+    if (prefixes) {
+      for (const h of headers) {
+        if (used.has(h)) continue;
+        const nh = n(h);
+        if (nh.endsWith('id')) continue;
+        if (prefixes.some(p => nh.startsWith(p))) { used.add(h); return h; }
+      }
+    }
+    return null;
+  }
+
+  // Order matters — more specific fields are locked in first so broad prefixes
+  // like 'warehouse' can't accidentally steal columns that already matched.
   fbinvColMap = {
-    deployStatus:    fbinvFindCol(['deploystatus','deploymentstatus','status','deploystatus']),
-    conditionStatus: fbinvFindCol(['conditionstatus','condition']),
-    serialNumber:    fbinvFindCol(['serialnumber','serial','sn']),
-    productTitle:    fbinvFindCol(['producttitle','productname','product','title','name','itemname','skuname','productdescription','description']),
-    genericCategory: fbinvFindCol(['genericcategory','category','productcategory','type']),
-    skuId:           fbinvFindCol(['skuid','sku','skulid']),
-    employeeName:    fbinvFindCol(['employeename','employee','person','assignedto','username','fullname','membername']),
-    forename:        fbinvFindCol(['forename','firstname']),
-    surname:         fbinvFindCol(['surname','lastname']),
-    organizationName:fbinvFindCol(['organizationname','orgname','organisation','organization','company','client']),
-    warehouseName:   fbinvFindCol(['warehousename','warehouse','location','facility']),
-    officeName:      fbinvFindCol(['officename','office']),
-    regionName:      fbinvFindCol(['regionname','region']),
-    createdAt:       fbinvFindCol(['createdat','created','createdate','dateadded']),
-    updatedAt:       fbinvFindCol(['updatedat','updated','updatedate','lastupdated']),
-    vendorName:      fbinvFindCol(['vendorname','vendor','supplier','manufacturer']),
+    serialNumber:     find(['serialnumber','serialno','sn'],               ['serial']),
+    deployStatus:     find(['deploystatus','deploymentstatus'],             ['deploystatus','deploymentstatus']),
+    conditionStatus:  find(['conditionstatus'],                             ['conditionstatus','condition']),
+    productTitle:     find(['producttitle','productname','itemname','skuname','productdescription'], ['producttitle','productname','itemname']),
+    genericCategory:  find(['genericcategory','productcategory','category'],['genericcategory','productcategory','category']),
+    skuId:            find(['skuid','sku'],                                 null),
+    // Employee: try a combined full-name column first, then forename only
+    employeeName:     find(['employeename','personname','personforename','forename','firstname','assignedto','fullname'], ['employeename','personname','forename','employee']),
+    employeeSurname:  find(['personsurname','surname','lastname'],          ['surname','lastname']),
+    organizationName: find(['organizationname','organisationname','orgname','companyname'], ['organization','organisation','orgname','company']),
+    warehouseName:    find(['warehousename','warehouselocation'],           ['warehouse']),
+    vendorName:       find(['vendorname','suppliername'],                   ['vendor','supplier']),
+    regionName:       find(['regionname','region'],                        null),
+    officeName:       find(['officename'],                                  ['office']),
+    createdAt:        find(['createdat','createddate','creationdate'],      ['createdat','created']),
+    updatedAt:        find(['updatedat','updateddate','lastmodified'],      ['updatedat','updated']),
   };
 }
 
@@ -2932,51 +2950,61 @@ function fbinvLoadCSV(text, filename) {
   fbinvAllItems = data;
   fbinvPage = 1;
 
-  // Build dynamic status & condition filter options
-  const statuses   = [...new Set(data.map(r => fbinvGet(r,'deployStatus')).filter(Boolean))].sort();
-  const conditions = [...new Set(data.map(r => fbinvGet(r,'conditionStatus')).filter(Boolean))].sort();
+  // Helper: sorted unique non-empty values for a logical field
+  const uniq = key => [...new Set(data.map(r => fbinvGet(r,key)).filter(Boolean))].sort();
 
+  // Status filter
   const sf = document.getElementById('fbinv-statusFilter');
   sf.innerHTML = '<option value="">All Statuses</option>' +
-    statuses.map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
+    uniq('deployStatus').map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
 
+  // Condition filter
   const cf = document.getElementById('fbinv-conditionFilter');
   cf.innerHTML = '<option value="">All Conditions</option>' +
-    conditions.map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
+    uniq('conditionStatus').map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
 
-  // Stats — match on normalised status value
-  const norm = s => (s||'').toUpperCase().replace(/[\s-]/g,'_');
-  const deployed = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('DEPLOYED') && !norm(fbinvGet(r,'deployStatus')).includes('PENDING')).length;
-  const storage  = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('STORAGE')).length;
-  const pending  = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('PENDING')).length;
-  const returned = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('RETURNED')).length;
+  // Org filter
+  const of_ = document.getElementById('fbinv-orgFilter');
+  of_.innerHTML = '<option value="">All Orgs</option>' +
+    uniq('organizationName').map(s => `<option value="${s}">${s}</option>`).join('');
+
+  // Warehouse filter
+  const wf = document.getElementById('fbinv-warehouseFilter');
+  wf.innerHTML = '<option value="">All Warehouses</option>' +
+    uniq('warehouseName').map(s => `<option value="${s}">${s}</option>`).join('');
+
+  // Stats
+  const ns = s => (s||'').toUpperCase().replace(/[\s-]/g,'_');
+  const deployed = data.filter(r => { const s=ns(fbinvGet(r,'deployStatus')); return s==='DEPLOYED'; }).length;
+  const storage  = data.filter(r => ns(fbinvGet(r,'deployStatus')).includes('STORAGE')).length;
+  const pending  = data.filter(r => ns(fbinvGet(r,'deployStatus')).includes('PENDING')).length;
+  const returned = data.filter(r => ns(fbinvGet(r,'deployStatus'))==='RETURNED').length;
   document.getElementById('fbinv-statTotal').textContent    = data.length.toLocaleString();
   document.getElementById('fbinv-statDeployed').textContent = deployed.toLocaleString();
   document.getElementById('fbinv-statStorage').textContent  = storage.toLocaleString();
   document.getElementById('fbinv-statPending').textContent  = pending.toLocaleString();
   document.getElementById('fbinv-statReturned').textContent = returned.toLocaleString();
 
-  // Build column headers for table — use detected logical cols, fallback to all CSV headers
+  // Display columns — employee shown only if mapped to something that isn't also warehouse
+  // If employeeName and warehouseName accidentally map to the same CSV column, drop employee
+  const empSameAsWh = fbinvColMap.employeeName && fbinvColMap.employeeName === fbinvColMap.warehouseName;
   const logicalCols = [
     { key:'productTitle',    label:'Product' },
     { key:'genericCategory', label:'Category' },
     { key:'serialNumber',    label:'Serial #' },
-    { key:'skuId',           label:'SKU' },
+    { key:'skuId',           label:'SKU ID' },
     { key:'deployStatus',    label:'Status' },
     { key:'conditionStatus', label:'Condition' },
-    { key:'employeeName',    label:'Employee' },
+    !empSameAsWh && { key:'employeeName',    label:'Employee' },
     { key:'organizationName',label:'Organisation' },
     { key:'warehouseName',   label:'Warehouse' },
-    { key:'vendorName',      label:'Vendor' },
     { key:'regionName',      label:'Region' },
     { key:'createdAt',       label:'Created' },
-  ];
-  // Only include cols where we found a mapping
+  ].filter(Boolean);
+
+  // Only show cols where we found a mapping; fall back to raw headers if <3 match
   fbinvColMap._displayCols = logicalCols.filter(c => fbinvColMap[c.key]);
-  // If very few mappings, fall back to showing all raw CSV headers
-  if (fbinvColMap._displayCols.length < 3) {
-    fbinvColMap._displayCols = null; // flag to use raw headers
-  }
+  if (fbinvColMap._displayCols.length < 3) fbinvColMap._displayCols = null;
 
   const thead = document.getElementById('fbinv-thead');
   if (fbinvColMap._displayCols) {
@@ -2991,7 +3019,6 @@ function fbinvLoadCSV(text, filename) {
     `Loaded ${new Date().toLocaleTimeString()}`;
   document.getElementById('fbinv-search').value = '';
 
-  // Show data state
   document.getElementById('fbinv-upload-state').style.display = 'none';
   document.getElementById('fbinv-data-state').style.display   = 'block';
 
@@ -3003,18 +3030,24 @@ function fbinvReset() {
   fbinvFiltered = [];
   fbinvPage = 1;
   document.getElementById('fbinv-file').value = '';
+  ['fbinv-statusFilter','fbinv-conditionFilter','fbinv-orgFilter','fbinv-warehouseFilter']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.selectedIndex = 0; });
   document.getElementById('fbinv-upload-state').style.display = 'block';
   document.getElementById('fbinv-data-state').style.display   = 'none';
 }
 
 function fbinvRender() {
-  const q      = (document.getElementById('fbinv-search').value || '').toLowerCase();
-  const status = document.getElementById('fbinv-statusFilter').value;
-  const cond   = document.getElementById('fbinv-conditionFilter').value;
+  const q         = (document.getElementById('fbinv-search').value || '').toLowerCase();
+  const status    = document.getElementById('fbinv-statusFilter').value;
+  const cond      = document.getElementById('fbinv-conditionFilter').value;
+  const org       = document.getElementById('fbinv-orgFilter').value;
+  const warehouse = document.getElementById('fbinv-warehouseFilter').value;
 
   fbinvFiltered = fbinvAllItems.filter(row => {
-    if (status && fbinvGet(row,'deployStatus')    !== status) return false;
-    if (cond   && fbinvGet(row,'conditionStatus') !== cond)   return false;
+    if (status    && fbinvGet(row,'deployStatus')     !== status)    return false;
+    if (cond      && fbinvGet(row,'conditionStatus')  !== cond)      return false;
+    if (org       && fbinvGet(row,'organizationName') !== org)       return false;
+    if (warehouse && fbinvGet(row,'warehouseName')    !== warehouse) return false;
     if (q) {
       const haystack = Object.values(row).join(' ').toLowerCase();
       if (!haystack.includes(q)) return false;
