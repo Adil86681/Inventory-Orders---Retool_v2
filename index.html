@@ -896,72 +896,80 @@
 <!-- ═══ INVENTORY MANAGEMENT TAB ═══ -->
 <div class="tab-panel" id="panel-fbinv">
 <div class="fbinv-wrap">
-  <div class="fbinv-header">
-    <div class="fbinv-title">
-      <h1>Inventory Management</h1>
-      <p id="fbinv-subtitle">All deployed assets — Live from Firstbase API</p>
-    </div>
-    <div class="fbinv-actions">
-      <span id="fbinv-sync-status" style="font-size:12px;font-family:var(--mono);color:var(--muted);"></span>
-      <button class="btn btn-primary" onclick="fbinvLoad(true)">↺ Refresh</button>
-    </div>
-  </div>
 
-  <div class="fbinv-stats">
-    <div class="fbinv-stat"><div class="fbinv-stat-label">Total Items</div><div class="fbinv-stat-value" id="fbinv-statTotal">—</div></div>
-    <div class="fbinv-stat"><div class="fbinv-stat-label">Deployed</div><div class="fbinv-stat-value c-green" id="fbinv-statDeployed">—</div></div>
-    <div class="fbinv-stat"><div class="fbinv-stat-label">In Storage</div><div class="fbinv-stat-value c-purple" id="fbinv-statStorage">—</div></div>
-    <div class="fbinv-stat"><div class="fbinv-stat-label">Pending</div><div class="fbinv-stat-value c-amber" id="fbinv-statPending">—</div></div>
-    <div class="fbinv-stat"><div class="fbinv-stat-label">Returned</div><div class="fbinv-stat-value c-red" id="fbinv-statReturned">—</div></div>
-  </div>
-
-  <div class="fbinv-controls">
-    <div class="fbinv-search-wrap">
-      <span class="fbinv-search-icon">⌕</span>
-      <input type="text" id="fbinv-search" placeholder="Search by serial, SKU, employee, org…" oninput="fbinvRender()">
+  <!-- Upload state -->
+  <div id="fbinv-upload-state">
+    <div class="fbinv-header">
+      <div class="fbinv-title">
+        <h1>Inventory Management</h1>
+        <p>Upload a CSV exported from Retool to view your inventory</p>
+      </div>
     </div>
-    <select class="fbinv-select" id="fbinv-statusFilter" onchange="fbinvRender()">
-      <option value="">All Statuses</option>
-      <option value="DEPLOYED">Deployed</option>
-      <option value="IN_STORAGE">In Storage</option>
-      <option value="PENDING_DEPLOYMENT">Pending</option>
-      <option value="RETURNED">Returned</option>
-    </select>
-    <select class="fbinv-select" id="fbinv-conditionFilter" onchange="fbinvRender()">
-      <option value="">All Conditions</option>
-      <option value="GOOD">Good</option>
-      <option value="DAMAGED">Damaged</option>
-    </select>
-  </div>
-
-  <div class="table-wrap">
-    <div class="table-scroll">
-      <table id="fbinv-table" style="width:100%;">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Category</th>
-            <th>Serial #</th>
-            <th>SKU</th>
-            <th>Status</th>
-            <th>Condition</th>
-            <th>Employee</th>
-            <th>Organisation</th>
-            <th>Warehouse</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody id="fbinv-tbody">
-          <tr><td colspan="10" class="fbinv-loading">Loading inventory data…</td></tr>
-        </tbody>
-      </table>
+    <div style="padding:32px 24px;">
+      <div class="upload-area" id="fbinv-dropzone"
+           onclick="document.getElementById('fbinv-file').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="fbinvHandleDrop(event)">
+        <span style="font-size:28px;">📊</span>
+        <div>
+          <p><strong>Click or drag</strong> your Retool inventory CSV here</p>
+          <p style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:4px;">Export from Retool → ⋮ menu → Download as CSV</p>
+        </div>
+        <input type="file" id="fbinv-file" accept=".csv" style="display:none" onchange="fbinvHandleFile(this.files[0])">
+      </div>
     </div>
   </div>
 
-  <div class="fbinv-pagination">
-    <span id="fbinv-paging-info">—</span>
-    <div class="fbinv-pg-btns" id="fbinv-pg-btns"></div>
+  <!-- Data state (hidden until CSV loaded) -->
+  <div id="fbinv-data-state" style="display:none;">
+    <div class="fbinv-header">
+      <div class="fbinv-title">
+        <h1>Inventory Management</h1>
+        <p id="fbinv-subtitle"></p>
+      </div>
+      <div class="fbinv-actions">
+        <span id="fbinv-sync-status" style="font-size:12px;font-family:var(--mono);color:var(--muted);"></span>
+        <button class="btn" onclick="fbinvReset()">↑ Load new file</button>
+      </div>
+    </div>
+
+    <div class="fbinv-stats">
+      <div class="fbinv-stat"><div class="fbinv-stat-label">Total Items</div><div class="fbinv-stat-value" id="fbinv-statTotal">—</div></div>
+      <div class="fbinv-stat"><div class="fbinv-stat-label">Deployed</div><div class="fbinv-stat-value c-green" id="fbinv-statDeployed">—</div></div>
+      <div class="fbinv-stat"><div class="fbinv-stat-label">In Storage</div><div class="fbinv-stat-value c-purple" id="fbinv-statStorage">—</div></div>
+      <div class="fbinv-stat"><div class="fbinv-stat-label">Pending</div><div class="fbinv-stat-value c-amber" id="fbinv-statPending">—</div></div>
+      <div class="fbinv-stat"><div class="fbinv-stat-label">Returned</div><div class="fbinv-stat-value c-red" id="fbinv-statReturned">—</div></div>
+    </div>
+
+    <div class="fbinv-controls">
+      <div class="fbinv-search-wrap">
+        <span class="fbinv-search-icon">⌕</span>
+        <input type="text" id="fbinv-search" placeholder="Search anything…" oninput="fbinvPage=1;fbinvRender()">
+      </div>
+      <select class="fbinv-select" id="fbinv-statusFilter" onchange="fbinvPage=1;fbinvRender()">
+        <option value="">All Statuses</option>
+      </select>
+      <select class="fbinv-select" id="fbinv-conditionFilter" onchange="fbinvPage=1;fbinvRender()">
+        <option value="">All Conditions</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table id="fbinv-table" style="width:100%;">
+          <thead id="fbinv-thead"><tr></tr></thead>
+          <tbody id="fbinv-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="fbinv-pagination">
+      <span id="fbinv-paging-info">—</span>
+      <div class="fbinv-pg-btns" id="fbinv-pg-btns"></div>
+    </div>
   </div>
+
 </div>
 </div>
 
@@ -2347,9 +2355,7 @@ function switchTab(tab) {
   if (tab === 'adil') {
     adilLoadFrame();
   }
-  if (tab === 'fbinv' && !fbinvInitialised) {
-    fbinvLoad(false);
-  }
+  // fbinv tab is upload-driven — no auto-load needed
 }
 
 // ─── ADIL'S DASHBOARD (embedded via iframe srcdoc) ────────────────────────────
@@ -2792,83 +2798,213 @@ function pmShowResultTab(tab) {
   });
 }
 
-// ─── INVENTORY MANAGEMENT TAB ─────────────────────────────────────────────────
-const FBINV_API = '/api/inventory';
-const FBINV_PAGE_SIZE = 50;
-
+// ─── INVENTORY MANAGEMENT TAB (CSV upload) ────────────────────────────────────
+const FBINV_PAGE_SIZE = 100;
 let fbinvInitialised = false;
-let fbinvAllItems = [];        // full dataset fetched from API
-let fbinvFiltered  = [];       // after search/filter applied
-let fbinvPage      = 1;
+let fbinvAllItems    = [];   // raw row objects keyed by header
+let fbinvFiltered    = [];
+let fbinvPage        = 1;
+let fbinvHeaders     = [];   // original CSV headers
+let fbinvColMap      = {};   // logical name → actual header
 
-function fbinvDeployBadge(status) {
-  const map = {
-    DEPLOYED:           ['fbinv-badge-deployed',  'Deployed'],
-    IN_STORAGE:         ['fbinv-badge-storage',   'In Storage'],
-    PENDING_DEPLOYMENT: ['fbinv-badge-pending',   'Pending'],
-    RETURNED:           ['fbinv-badge-returned',  'Returned'],
+// Normalise a header string for fuzzy matching
+function fbinvNorm(s) { return s.toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+// Try to find which actual header matches a list of candidate normalised names
+function fbinvFindCol(candidates) {
+  for (const h of fbinvHeaders) {
+    const n = fbinvNorm(h);
+    if (candidates.some(c => n === c || n.includes(c))) return h;
+  }
+  return null;
+}
+
+// Build logical → header mapping from whatever Retool exports
+function fbinvBuildColMap(headers) {
+  fbinvHeaders = headers;
+  fbinvColMap = {
+    deployStatus:    fbinvFindCol(['deploystatus','deploymentstatus','status','deploystatus']),
+    conditionStatus: fbinvFindCol(['conditionstatus','condition']),
+    serialNumber:    fbinvFindCol(['serialnumber','serial','sn']),
+    productTitle:    fbinvFindCol(['producttitle','productname','product','title','name','itemname','skuname','productdescription','description']),
+    genericCategory: fbinvFindCol(['genericcategory','category','productcategory','type']),
+    skuId:           fbinvFindCol(['skuid','sku','skulid']),
+    employeeName:    fbinvFindCol(['employeename','employee','person','assignedto','username','fullname','membername']),
+    forename:        fbinvFindCol(['forename','firstname']),
+    surname:         fbinvFindCol(['surname','lastname']),
+    organizationName:fbinvFindCol(['organizationname','orgname','organisation','organization','company','client']),
+    warehouseName:   fbinvFindCol(['warehousename','warehouse','location','facility']),
+    officeName:      fbinvFindCol(['officename','office']),
+    regionName:      fbinvFindCol(['regionname','region']),
+    createdAt:       fbinvFindCol(['createdat','created','createdate','dateadded']),
+    updatedAt:       fbinvFindCol(['updatedat','updated','updatedate','lastupdated']),
+    vendorName:      fbinvFindCol(['vendorname','vendor','supplier','manufacturer']),
   };
-  const [cls, label] = map[status] || ['fbinv-badge-other', status || '—'];
+}
+
+function fbinvGet(row, key) {
+  const h = fbinvColMap[key];
+  if (!h) return '';
+  return (row[h] || '').trim();
+}
+
+// Deploy status badge — handles various formats from Retool
+function fbinvDeployBadge(raw) {
+  const s = (raw || '').toUpperCase().replace(/[\s-]/g,'_');
+  const map = {
+    DEPLOYED:           ['fbinv-badge-deployed', 'Deployed'],
+    IN_STORAGE:         ['fbinv-badge-storage',  'In Storage'],
+    INSTORAGE:          ['fbinv-badge-storage',  'In Storage'],
+    STORAGE:            ['fbinv-badge-storage',  'In Storage'],
+    PENDING_DEPLOYMENT: ['fbinv-badge-pending',  'Pending'],
+    PENDINGDEPLOYMENT:  ['fbinv-badge-pending',  'Pending'],
+    PENDING:            ['fbinv-badge-pending',  'Pending'],
+    RETURNED:           ['fbinv-badge-returned', 'Returned'],
+  };
+  const [cls, label] = map[s] || ['fbinv-badge-other', raw || '—'];
   return `<span class="fbinv-badge ${cls}">${label}</span>`;
 }
-function fbinvCondBadge(status) {
-  if (!status) return '—';
-  const cls = status === 'GOOD' ? 'fbinv-badge-good' : status === 'DAMAGED' ? 'fbinv-badge-damaged' : 'fbinv-badge-other';
-  return `<span class="fbinv-badge ${cls}">${status.charAt(0)+status.slice(1).toLowerCase()}</span>`;
+
+function fbinvCondBadge(raw) {
+  if (!raw) return '—';
+  const s = raw.toUpperCase();
+  const cls = s === 'GOOD' ? 'fbinv-badge-good' : s.includes('DAMAGE') ? 'fbinv-badge-damaged' : 'fbinv-badge-other';
+  const label = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  return `<span class="fbinv-badge ${cls}">${label}</span>`;
 }
 
-async function fbinvLoad(forceRefresh) {
-  fbinvInitialised = true;
-  const syncEl = document.getElementById('fbinv-sync-status');
-  syncEl.textContent = '⟳ Loading…';
-  document.getElementById('fbinv-tbody').innerHTML =
-    '<tr><td colspan="10" class="fbinv-loading">Loading inventory data…</td></tr>';
-
-  try {
-    // Fetch all pages
-    let allItems = [];
-    let page = 1;
-    let totalPages = 1;
-    do {
-      const url = `${FBINV_API}?page=${page}&pageSize=500`;
-      const res = await fetch(url, { cache: forceRefresh ? 'no-store' : 'default' });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`API ${res.status}: ${err}`);
-      }
-      const json = await res.json();
-      if (json.error) throw new Error(json.error);
-      allItems = allItems.concat(json.items || []);
-      totalPages = json.totalPages || 1;
-      page++;
-    } while (page <= totalPages && page <= 10); // safety cap at 5000 items
-
-    fbinvAllItems = allItems;
-    fbinvPage = 1;
-
-    // Update stats
-    const deployed  = allItems.filter(i => i.deployStatus === 'DEPLOYED').length;
-    const storage   = allItems.filter(i => i.deployStatus === 'IN_STORAGE').length;
-    const pending   = allItems.filter(i => i.deployStatus === 'PENDING_DEPLOYMENT').length;
-    const returned  = allItems.filter(i => i.deployStatus === 'RETURNED').length;
-    document.getElementById('fbinv-statTotal').textContent    = allItems.length.toLocaleString();
-    document.getElementById('fbinv-statDeployed').textContent = deployed.toLocaleString();
-    document.getElementById('fbinv-statStorage').textContent  = storage.toLocaleString();
-    document.getElementById('fbinv-statPending').textContent  = pending.toLocaleString();
-    document.getElementById('fbinv-statReturned').textContent = returned.toLocaleString();
-
-    const now = new Date();
-    syncEl.textContent = `Last updated ${now.toLocaleTimeString()}`;
-    document.getElementById('fbinv-subtitle').textContent =
-      `${allItems.length.toLocaleString()} assets — Live from Firstbase API`;
-
-    fbinvRender();
-  } catch (e) {
-    console.error('fbinv load error', e);
-    document.getElementById('fbinv-tbody').innerHTML =
-      `<tr><td colspan="10" class="fbinv-empty">⚠️ Could not load inventory: ${e.message}<br><small>Ensure the Vercel deployment includes <code>/api/inventory.js</code></small></td></tr>`;
-    syncEl.textContent = '⚠️ Error';
+// Proper CSV parser (handles quoted fields, embedded commas & newlines)
+function fbinvParseCSV(text) {
+  const rows = [];
+  let cur = '', inQ = false, fields = [], r = 0;
+  // Normalise line endings
+  text = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], nx = text[i+1];
+    if (inQ) {
+      if (ch === '"' && nx === '"') { cur += '"'; i++; }
+      else if (ch === '"') { inQ = false; }
+      else { cur += ch; }
+    } else {
+      if (ch === '"') { inQ = true; }
+      else if (ch === ',') { fields.push(cur); cur = ''; }
+      else if (ch === '\n') {
+        fields.push(cur); cur = '';
+        if (r === 0) rows.push(fields); // headers
+        else if (fields.some(f=>f.trim())) rows.push(fields); // skip blank rows
+        fields = []; r++;
+      } else { cur += ch; }
+    }
   }
+  if (cur || fields.length) { fields.push(cur); if(fields.some(f=>f.trim())) rows.push(fields); }
+  if (rows.length < 2) return { headers: [], data: [] };
+  const headers = rows[0].map(h => h.trim());
+  const data = rows.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (row[i] || '').trim(); });
+    return obj;
+  });
+  return { headers, data };
+}
+
+function fbinvHandleDrop(e) {
+  e.preventDefault();
+  document.getElementById('fbinv-dropzone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) fbinvHandleFile(file);
+}
+
+function fbinvHandleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => fbinvLoadCSV(e.target.result, file.name);
+  reader.readAsText(file, 'UTF-8');
+}
+
+function fbinvLoadCSV(text, filename) {
+  const { headers, data } = fbinvParseCSV(text);
+  if (!headers.length || !data.length) {
+    alert('Could not parse CSV — make sure it has a header row.');
+    return;
+  }
+
+  fbinvBuildColMap(headers);
+  fbinvAllItems = data;
+  fbinvPage = 1;
+
+  // Build dynamic status & condition filter options
+  const statuses   = [...new Set(data.map(r => fbinvGet(r,'deployStatus')).filter(Boolean))].sort();
+  const conditions = [...new Set(data.map(r => fbinvGet(r,'conditionStatus')).filter(Boolean))].sort();
+
+  const sf = document.getElementById('fbinv-statusFilter');
+  sf.innerHTML = '<option value="">All Statuses</option>' +
+    statuses.map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
+
+  const cf = document.getElementById('fbinv-conditionFilter');
+  cf.innerHTML = '<option value="">All Conditions</option>' +
+    conditions.map(s => `<option value="${s}">${s.replace(/_/g,' ')}</option>`).join('');
+
+  // Stats — match on normalised status value
+  const norm = s => (s||'').toUpperCase().replace(/[\s-]/g,'_');
+  const deployed = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('DEPLOYED') && !norm(fbinvGet(r,'deployStatus')).includes('PENDING')).length;
+  const storage  = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('STORAGE')).length;
+  const pending  = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('PENDING')).length;
+  const returned = data.filter(r => norm(fbinvGet(r,'deployStatus')).includes('RETURNED')).length;
+  document.getElementById('fbinv-statTotal').textContent    = data.length.toLocaleString();
+  document.getElementById('fbinv-statDeployed').textContent = deployed.toLocaleString();
+  document.getElementById('fbinv-statStorage').textContent  = storage.toLocaleString();
+  document.getElementById('fbinv-statPending').textContent  = pending.toLocaleString();
+  document.getElementById('fbinv-statReturned').textContent = returned.toLocaleString();
+
+  // Build column headers for table — use detected logical cols, fallback to all CSV headers
+  const logicalCols = [
+    { key:'productTitle',    label:'Product' },
+    { key:'genericCategory', label:'Category' },
+    { key:'serialNumber',    label:'Serial #' },
+    { key:'skuId',           label:'SKU' },
+    { key:'deployStatus',    label:'Status' },
+    { key:'conditionStatus', label:'Condition' },
+    { key:'employeeName',    label:'Employee' },
+    { key:'organizationName',label:'Organisation' },
+    { key:'warehouseName',   label:'Warehouse' },
+    { key:'vendorName',      label:'Vendor' },
+    { key:'regionName',      label:'Region' },
+    { key:'createdAt',       label:'Created' },
+  ];
+  // Only include cols where we found a mapping
+  fbinvColMap._displayCols = logicalCols.filter(c => fbinvColMap[c.key]);
+  // If very few mappings, fall back to showing all raw CSV headers
+  if (fbinvColMap._displayCols.length < 3) {
+    fbinvColMap._displayCols = null; // flag to use raw headers
+  }
+
+  const thead = document.getElementById('fbinv-thead');
+  if (fbinvColMap._displayCols) {
+    thead.innerHTML = '<tr>' + fbinvColMap._displayCols.map(c=>`<th>${c.label}</th>`).join('') + '</tr>';
+  } else {
+    thead.innerHTML = '<tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr>';
+  }
+
+  document.getElementById('fbinv-subtitle').textContent =
+    `${data.length.toLocaleString()} items · ${filename}`;
+  document.getElementById('fbinv-sync-status').textContent =
+    `Loaded ${new Date().toLocaleTimeString()}`;
+  document.getElementById('fbinv-search').value = '';
+
+  // Show data state
+  document.getElementById('fbinv-upload-state').style.display = 'none';
+  document.getElementById('fbinv-data-state').style.display   = 'block';
+
+  fbinvRender();
+}
+
+function fbinvReset() {
+  fbinvAllItems = [];
+  fbinvFiltered = [];
+  fbinvPage = 1;
+  document.getElementById('fbinv-file').value = '';
+  document.getElementById('fbinv-upload-state').style.display = 'block';
+  document.getElementById('fbinv-data-state').style.display   = 'none';
 }
 
 function fbinvRender() {
@@ -2876,50 +3012,53 @@ function fbinvRender() {
   const status = document.getElementById('fbinv-statusFilter').value;
   const cond   = document.getElementById('fbinv-conditionFilter').value;
 
-  fbinvFiltered = fbinvAllItems.filter(item => {
-    if (status && item.deployStatus !== status) return false;
-    if (cond   && item.conditionStatus !== cond) return false;
+  fbinvFiltered = fbinvAllItems.filter(row => {
+    if (status && fbinvGet(row,'deployStatus')    !== status) return false;
+    if (cond   && fbinvGet(row,'conditionStatus') !== cond)   return false;
     if (q) {
-      const haystack = [
-        item.serialNumber, item.productTitle, item.genericCategory,
-        item.employeeName, item.organizationName, item.warehouseName, item.skuId
-      ].join(' ').toLowerCase();
+      const haystack = Object.values(row).join(' ').toLowerCase();
       if (!haystack.includes(q)) return false;
     }
     return true;
   });
 
-  const total = fbinvFiltered.length;
+  const total    = fbinvFiltered.length;
   const totalPgs = Math.max(1, Math.ceil(total / FBINV_PAGE_SIZE));
   if (fbinvPage > totalPgs) fbinvPage = 1;
-
   const start = (fbinvPage - 1) * FBINV_PAGE_SIZE;
   const slice = fbinvFiltered.slice(start, start + FBINV_PAGE_SIZE);
 
+  const cols = fbinvColMap._displayCols; // logical cols or null → raw headers
+  const colCount = cols ? cols.length : fbinvHeaders.length;
   const tbody = document.getElementById('fbinv-tbody');
+
   if (!slice.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="fbinv-empty">No items match your filters.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="fbinv-empty">No items match your filters.</td></tr>`;
+  } else if (cols) {
+    tbody.innerHTML = slice.map(row => {
+      const cells = cols.map(c => {
+        const v = fbinvGet(row, c.key) || '—';
+        if (c.key === 'deployStatus')    return `<td>${fbinvDeployBadge(v)}</td>`;
+        if (c.key === 'conditionStatus') return `<td>${fbinvCondBadge(v)}</td>`;
+        if (c.key === 'createdAt')       return `<td style="font-family:var(--mono);font-size:11px;">${v.substring(0,10)||'—'}</td>`;
+        if (c.key === 'serialNumber' || c.key === 'skuId')
+          return `<td style="font-family:var(--mono);font-size:11px;">${v}</td>`;
+        if (c.key === 'productTitle')
+          return `<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${v.replace(/"/g,'&quot;')}">${v}</td>`;
+        return `<td>${v}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
   } else {
-    tbody.innerHTML = slice.map(item => `
-      <tr>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(item.productTitle||'').replace(/"/g,'&quot;')}">${item.productTitle || '—'}</td>
-        <td>${item.genericCategory || '—'}</td>
-        <td style="font-family:var(--mono);font-size:11px;">${item.serialNumber || '—'}</td>
-        <td style="font-family:var(--mono);font-size:11px;">${item.skuId || '—'}</td>
-        <td>${fbinvDeployBadge(item.deployStatus)}</td>
-        <td>${fbinvCondBadge(item.conditionStatus)}</td>
-        <td>${item.employeeName || '—'}</td>
-        <td>${item.organizationName || '—'}</td>
-        <td>${item.warehouseName || '—'}</td>
-        <td style="font-family:var(--mono);font-size:11px;">${item.createdAt ? item.createdAt.substring(0,10) : '—'}</td>
-      </tr>`).join('');
+    // Raw CSV fallback — show all headers as-is
+    tbody.innerHTML = slice.map(row =>
+      '<tr>' + fbinvHeaders.map(h => `<td>${(row[h]||'—')}</td>`).join('') + '</tr>'
+    ).join('');
   }
 
-  // Paging info
   document.getElementById('fbinv-paging-info').textContent =
     total ? `Showing ${start+1}–${Math.min(start+FBINV_PAGE_SIZE, total)} of ${total.toLocaleString()}` : '0 results';
 
-  // Page buttons
   const pgWrap = document.getElementById('fbinv-pg-btns');
   pgWrap.innerHTML = '';
   const addBtn = (label, pg, disabled, active) => {
@@ -2931,10 +3070,9 @@ function fbinvRender() {
     pgWrap.appendChild(b);
   };
   addBtn('‹', fbinvPage-1, fbinvPage<=1, false);
-  // Show up to 5 page numbers around current
   const win = 2;
   for (let p = Math.max(1,fbinvPage-win); p <= Math.min(totalPgs,fbinvPage+win); p++) {
-    addBtn(p, p, false, p === fbinvPage);
+    addBtn(p, p, false, p===fbinvPage);
   }
   addBtn('›', fbinvPage+1, fbinvPage>=totalPgs, false);
 }
