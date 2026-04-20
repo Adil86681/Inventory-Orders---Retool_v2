@@ -903,8 +903,8 @@
       <table>
         <thead><tr>
           <th style="width:56px;">Image</th>
-          <th>Product Title</th>
-          <th>Product ID</th>
+          <th style="width:340px;">Product Title</th>
+          <th style="width:340px;">Product ID</th>
           <th>MPN</th>
           <th>Status</th>
           <th>Category</th>
@@ -3503,15 +3503,14 @@ function productsRender() {
         ? `<img src="${productsEsc(img)}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:4px;background:var(--surface3);" loading="lazy" onerror="this.style.display='none'">`
         : `<div style="width:40px;height:40px;border-radius:4px;background:var(--surface3);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;">—</div>`;
       const id = r.id || '';
-      const shortId = id.substring(0, 8) + (id.length > 8 ? '…' : '');
       // btn-copy class matches the other copy buttons; data-* attrs feed the handler
       const copyBtn = id
         ? `<button class="btn-copy" data-pid="${productsEsc(id)}" data-ptitle="${productsEsc(title)}" onclick="productsCopyIdAndTitle(this)" title="Copy Product ID + Title">⎘</button>`
         : '';
       return `<tr>
         <td>${imgCell}</td>
-        <td style="font-weight:500">${productsEsc(title)}</td>
-        <td style="white-space:nowrap"><span style="font-family:var(--mono);font-size:11px" title="${productsEsc(id)}">${productsEsc(shortId)}</span>${copyBtn}</td>
+        <td><div style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500" title="${productsEsc(title)}">${productsEsc(title)}</div></td>
+        <td style="white-space:nowrap"><span style="font-family:var(--mono);font-size:11px">${productsEsc(id)}</span>${copyBtn}</td>
         <td style="font-family:var(--mono);font-size:12px">${productsEsc(mpn)}</td>
         <td>${productsStatusBadge(r.status)}</td>
         <td>${productsEsc(category)}</td>
