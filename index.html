@@ -613,11 +613,8 @@
   <button class="tab-btn" onclick="switchTab('adil')" id="tabBtn-adil">
     🧭 Adil's Dashboard
   </button>
-  <button class="tab-btn" onclick="switchTab('pomatch')" id="tabBtn-pomatch">
-    🔗 PO Matcher
-  </button>
-  <button class="tab-btn" onclick="switchTab('fbinv')" id="tabBtn-fbinv">
-    📊 Inventory Management
+  <button class="tab-btn" onclick="switchTab('liveInv')" id="tabBtn-liveInv">
+    🗃️ Inventory <span class="tab-count" id="tabCount-liveInv">0</span>
   </button>
 </div>
 
@@ -805,191 +802,71 @@
 
 <!-- ═══ ADIL'S DASHBOARD TAB ═══ -->
 
-<!-- ═══ PO MATCHER TAB ═══ -->
-<div class="tab-panel" id="panel-pomatch">
-<div class="app">
-  <div class="page-header">
-    <div class="page-title">
-      <h1>PO Matcher</h1>
-      <p>Upload MGMT (CSV) and GRV (XLSX) files to find matched &amp; unmatched POs</p>
-    </div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
-    <div>
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:8px;">File 1 — MGMT / Retool (CSV)</div>
-      <div class="upload-area" id="pm-drop1" onclick="document.getElementById('pm-file1').click()"
-           ondragover="event.preventDefault();this.classList.add('drag')"
-           ondragleave="this.classList.remove('drag')"
-           ondrop="pmHandleDrop(event,'1')">
-        <span style="font-size:22px;">📄</span>
-        <div>
-          <p id="pm-label1"><strong>Click or drag</strong> inventory-order-items.csv</p>
-          <p id="pm-info1" style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:3px;"></p>
-        </div>
-        <input type="file" id="pm-file1" accept=".csv" style="display:none" onchange="pmLoadFile(this,'1')">
-      </div>
-    </div>
-    <div>
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:8px;">File 2 — GRV Stock Report (XLSX)</div>
-      <div class="upload-area" id="pm-drop2" onclick="document.getElementById('pm-file2').click()"
-           ondragover="event.preventDefault();this.classList.add('drag')"
-           ondragleave="this.classList.remove('drag')"
-           ondrop="pmHandleDrop(event,'2')">
-        <span style="font-size:22px;">📊</span>
-        <div>
-          <p id="pm-label2"><strong>Click or drag</strong> STOCK_REPORT_SD_COV_*.xlsx</p>
-          <p id="pm-info2" style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:3px;"></p>
-        </div>
-        <input type="file" id="pm-file2" accept=".xlsx" style="display:none" onchange="pmLoadFile(this,'2')">
-      </div>
-    </div>
-  </div>
-
-  <div style="text-align:center;margin-bottom:28px;">
-    <button class="btn btn-primary" id="pm-compareBtn" onclick="pmCompare()" disabled style="opacity:0.4;padding:10px 32px;font-size:14px;">
-      🔗 Compare POs
-    </button>
-    <div id="pm-status" style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-top:8px;"></div>
-  </div>
-
-  <div id="pm-stats" style="display:none;margin-bottom:24px;">
-    <div class="stats" style="grid-template-columns:repeat(4,1fr);">
-      <div class="stat"><div class="stat-label">MGMT POs</div><div class="stat-value c-accent" id="pm-statMgmt">0</div></div>
-      <div class="stat"><div class="stat-label">GRV POs</div><div class="stat-value c-purple" id="pm-statGrv">0</div></div>
-      <div class="stat"><div class="stat-label">✅ Matched (Received)</div><div class="stat-value c-green" id="pm-statMatched">0</div></div>
-      <div class="stat"><div class="stat-label">⏳ Not Yet Received</div><div class="stat-value c-amber" id="pm-statUnmatched">0</div></div>
-    </div>
-  </div>
-
-  <div id="pm-results" style="display:none;">
-    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;">
-      <button id="pm-rtab-matched" onclick="pmShowResultTab('matched')"
-        style="padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:none;border-bottom:2px solid var(--accent);color:var(--accent2);font-family:var(--sans);">
-        ✅ Matched <span id="pm-rtab-matched-count" style="font-size:11px;font-family:var(--mono);background:rgba(61,111,255,0.15);border:1px solid rgba(61,111,255,0.3);color:var(--accent2);padding:1px 7px;border-radius:20px;"></span>
-      </button>
-      <button id="pm-rtab-unmatched" onclick="pmShowResultTab('unmatched')"
-        style="padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;color:var(--text2);font-family:var(--sans);">
-        ⏳ Not Received <span id="pm-rtab-unmatched-count" style="font-size:11px;font-family:var(--mono);background:var(--surface3);border:1px solid var(--border2);color:var(--text2);padding:1px 7px;border-radius:20px;"></span>
-      </button>
-    </div>
-    <div id="pm-panel-matched">
-      <div class="table-wrap"><div class="table-scroll">
-        <table id="pm-table-matched" style="width:100%;"></table>
-      </div></div>
-    </div>
-    <div id="pm-panel-unmatched" style="display:none;">
-      <div class="table-wrap"><div class="table-scroll">
-        <table id="pm-table-unmatched" style="width:100%;"></table>
-      </div></div>
-    </div>
-  </div>
-</div>
-</div>
-
 <div class="tab-panel" id="panel-adil">
   <iframe id="adilFrame"
           title="Adil's Dashboard"
           style="display:block;border:0;width:100%;height:calc(100vh - 97px);background:#f0f7ff"></iframe>
 </div>
 
-<!-- ═══ INVENTORY MANAGEMENT TAB ═══ -->
-<div class="tab-panel" id="panel-fbinv">
-<div class="fbinv-wrap">
-
-  <!-- Upload state -->
-  <div id="fbinv-upload-state">
-    <div class="fbinv-header">
-      <div class="fbinv-title">
-        <h1>Inventory Management</h1>
-        <p>Upload a CSV exported from Retool to view your inventory</p>
-      </div>
+<!-- ═══ LIVE INVENTORY TAB ═══ -->
+<div class="tab-panel" id="panel-liveInv">
+<div class="app">
+  <div class="page-header">
+    <div class="page-title">
+      <h1>Inventory</h1>
+      <p id="liveInv-subtitle">Live from Firstbase API · excl. Warehouse SLC</p>
     </div>
-    <div style="padding:32px 24px;">
-      <div class="upload-area" id="fbinv-dropzone"
-           onclick="document.getElementById('fbinv-file').click()"
-           ondragover="event.preventDefault();this.classList.add('drag')"
-           ondragleave="this.classList.remove('drag')"
-           ondrop="fbinvHandleDrop(event)">
-        <span style="font-size:28px;">📊</span>
-        <div>
-          <p><strong>Click or drag</strong> your Retool inventory CSV here</p>
-          <p style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:4px;">Export from Retool → ⋮ menu → Download as CSV</p>
-        </div>
-        <input type="file" id="fbinv-file" accept=".csv" style="display:none" onchange="fbinvHandleFile(this.files[0])">
-      </div>
+    <div class="page-actions">
+      <span id="liveInv-syncText" style="font-size:12px;font-family:var(--mono);color:var(--muted);align-self:center;"></span>
+      <button class="btn btn-primary" onclick="liveInvFetch()" id="liveInv-refreshBtn">↺ Refresh</button>
     </div>
   </div>
 
-  <!-- Data state (hidden until CSV loaded) -->
-  <div id="fbinv-data-state" style="display:none;">
-    <div class="fbinv-header">
-      <div class="fbinv-title">
-        <h1>Inventory Management</h1>
-        <p id="fbinv-subtitle"></p>
-      </div>
-      <div class="fbinv-actions">
-        <span id="fbinv-sync-status" style="font-size:12px;font-family:var(--mono);color:var(--muted);"></span>
-        <button class="btn" onclick="fbinvReset()">↑ Load new file</button>
-      </div>
-    </div>
-
-    <div class="fbinv-stats">
-      <div class="fbinv-stat"><div class="fbinv-stat-label">Total Items</div><div class="fbinv-stat-value" id="fbinv-statTotal">—</div></div>
-      <div class="fbinv-stat"><div class="fbinv-stat-label">Deployed</div><div class="fbinv-stat-value c-green" id="fbinv-statDeployed">—</div></div>
-      <div class="fbinv-stat"><div class="fbinv-stat-label">In Storage</div><div class="fbinv-stat-value c-purple" id="fbinv-statStorage">—</div></div>
-      <div class="fbinv-stat"><div class="fbinv-stat-label">Pending</div><div class="fbinv-stat-value c-amber" id="fbinv-statPending">—</div></div>
-      <div class="fbinv-stat"><div class="fbinv-stat-label">Returned</div><div class="fbinv-stat-value c-red" id="fbinv-statReturned">—</div></div>
-    </div>
-
-    <!-- Column mapping inspector -->
-    <div id="fbinv-mapping-bar" style="padding:0 24px 0;margin-bottom:4px;">
-      <button onclick="fbinvToggleMapping()" style="font-size:11px;font-family:var(--mono);color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 0;text-decoration:underline dotted;">
-        🔍 Show column mappings
-      </button>
-      <div id="fbinv-mapping-panel" style="display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:10px;">Column Mappings — CSV header → logical field</div>
-        <div id="fbinv-mapping-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;font-size:12px;font-family:var(--mono);"></div>
-        <div style="margin-top:10px;font-size:11px;color:var(--muted);">
-          Unmapped CSV headers (not used): <span id="fbinv-mapping-unused" style="color:var(--muted);"></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="fbinv-controls">
-      <div class="fbinv-search-wrap">
-        <span class="fbinv-search-icon">⌕</span>
-        <input type="text" id="fbinv-search" placeholder="Search anything…" oninput="fbinvPage=1;fbinvRender()">
-      </div>
-      <select class="fbinv-select" id="fbinv-statusFilter" onchange="fbinvPage=1;fbinvRender()">
-        <option value="">All Statuses</option>
-      </select>
-      <select class="fbinv-select" id="fbinv-conditionFilter" onchange="fbinvPage=1;fbinvRender()">
-        <option value="">All Conditions</option>
-      </select>
-      <select class="fbinv-select" id="fbinv-orgFilter" onchange="fbinvPage=1;fbinvRender()" style="max-width:200px;">
-        <option value="">All Orgs</option>
-      </select>
-      <select class="fbinv-select" id="fbinv-warehouseFilter" onchange="fbinvPage=1;fbinvRender()" style="max-width:180px;">
-        <option value="">All Warehouses</option>
-      </select>
-    </div>
-
-    <div class="table-wrap">
-      <div class="table-scroll">
-        <table id="fbinv-table" style="width:100%;">
-          <thead id="fbinv-thead"><tr></tr></thead>
-          <tbody id="fbinv-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="fbinv-pagination">
-      <span id="fbinv-paging-info">—</span>
-      <div class="fbinv-pg-btns" id="fbinv-pg-btns"></div>
-    </div>
+  <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat"><div class="stat-label">Total Items</div><div class="stat-value c-text" id="liveInv-statTotal">—</div></div>
+    <div class="stat"><div class="stat-label">Deployed</div><div class="stat-value c-green" id="liveInv-statDeployed">—</div></div>
+    <div class="stat"><div class="stat-label">Available</div><div class="stat-value c-accent" id="liveInv-statAvailable">—</div></div>
+    <div class="stat"><div class="stat-label">Archived</div><div class="stat-value c-red" id="liveInv-statArchived">—</div></div>
   </div>
 
+  <div class="controls">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="liveInv-search" placeholder="Search by serial, ID, org, SKU, warehouse…" oninput="liveInvRender()">
+    </div>
+    <select id="liveInv-orgFilter" onchange="liveInvRender()" style="min-width:200px;">
+      <option value="">All Organizations</option>
+    </select>
+    <select id="liveInv-statusFilter" onchange="liveInvRender()" style="min-width:180px;">
+      <option value="">All Statuses</option>
+    </select>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-toolbar">
+      <div class="table-toolbar-left">Rows <span class="count-badge" id="liveInv-rowCount">0</span></div>
+      <div class="table-toolbar-right" id="liveInv-pageInfo"></div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Inventory ID</th>
+          <th>Serial</th>
+          <th>Organization</th>
+          <th>Vendor SKU</th>
+          <th>SKU ID</th>
+          <th>Condition</th>
+          <th>Status</th>
+          <th>Warehouse</th>
+          <th>Active</th>
+          <th>Created</th>
+        </tr></thead>
+        <tbody id="liveInv-tableBody">
+          <tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Click Refresh, or switch to this tab to load live inventory…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 </div>
 
@@ -2375,6 +2252,9 @@ function switchTab(tab) {
   if (tab === 'adil') {
     adilLoadFrame();
   }
+  if (tab === 'liveInv' && !liveInvLoaded && !liveInvLoading) {
+    liveInvFetch();
+  }
   // fbinv tab is upload-driven — no auto-load needed
 }
 
@@ -3185,6 +3065,185 @@ function fbinvRender() {
     addBtn(p, p, false, p===fbinvPage);
   }
   addBtn('›', fbinvPage+1, fbinvPage>=totalPgs, false);
+}
+
+// ─── LIVE INVENTORY TAB (getAllInventories via /api/graphql) ─────────────────
+let liveInvData = [];
+let liveInvLoaded = false;
+let liveInvLoading = false;
+
+// Prettified status labels
+const LIVE_INV_STATUS_LABEL = {
+  DEPLOYED: 'Deployed',
+  AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable',
+  ARCHIVED: 'Archived',
+  AWAITING_ARRIVAL: 'Awaiting Arrival'
+};
+
+function liveInvStatusClass(s) {
+  if (s === 'DEPLOYED') return 'deployed';
+  if (s === 'AVAILABLE') return 'storage';
+  if (s === 'ARCHIVED') return 'returned';
+  if (s === 'UNAVAILABLE' || s === 'AWAITING_ARRIVAL') return 'pending';
+  return 'other';
+}
+
+function liveInvEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function liveInvFetch() {
+  if (liveInvLoading) return;
+  liveInvLoading = true;
+  document.getElementById('liveInv-refreshBtn').disabled = true;
+  const syncText = document.getElementById('liveInv-syncText');
+  const body = document.getElementById('liveInv-tableBody');
+  body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Fetching inventory from Firstbase…</td></tr>';
+
+  try {
+    const all = [];
+    const pageSize = 100;
+    const MAX_PAGES = 30; // safety cap → up to 3,000 rows
+    let pageNumber = 1;
+    let totalElements = 0;
+    let totalPages = 0;
+
+    while (pageNumber <= MAX_PAGES) {
+      const query = `query GetAllInventories($paging: PagingAndSorting!) {
+  getAllInventories(pagingAndSorting: $paging) {
+    totalElements totalPages pageNumber size
+    data {
+      id serialNumber active conditionStatus deployStatus createdAt
+      organization { id name }
+      sku { id vendorSku }
+      warehouse { id name }
+    }
+  }
+}`;
+      const variables = {
+        paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] }
+      };
+
+      syncText.textContent = `Loading page ${pageNumber}${totalPages ? '/' + Math.min(totalPages, MAX_PAGES) : ''}…`;
+
+      const res = await fetch(API_GRAPHQL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+
+      const page = json.data?.getAllInventories;
+      if (!page) throw new Error('No data returned');
+      all.push(...(page.data || []));
+      totalElements = page.totalElements || 0;
+      totalPages = page.totalPages || 0;
+
+      if (pageNumber >= totalPages) break;
+      pageNumber++;
+    }
+
+    // Filter out Warehouse SLC rows (reuses existing helper)
+    const filtered = all.filter(row => !isBlockedWarehouse(row.warehouse?.name));
+
+    liveInvData = filtered;
+    liveInvLoaded = true;
+    liveInvPopulateFilters();
+    liveInvRender();
+
+    const capped = (pageNumber > MAX_PAGES) && (totalPages > MAX_PAGES);
+    syncText.textContent = `Loaded ${filtered.length.toLocaleString()} rows (${all.length.toLocaleString()} before SLC filter${capped ? `, capped at ${MAX_PAGES * pageSize}/${totalElements.toLocaleString()} total` : ''})`;
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--red)">Error: ${liveInvEsc(e.message)}</td></tr>`;
+    syncText.textContent = 'Load failed';
+  } finally {
+    liveInvLoading = false;
+    document.getElementById('liveInv-refreshBtn').disabled = false;
+  }
+}
+
+function liveInvPopulateFilters() {
+  // Preserve current selections if still valid
+  const orgSel = document.getElementById('liveInv-orgFilter');
+  const statusSel = document.getElementById('liveInv-statusFilter');
+  const prevOrg = orgSel.value;
+  const prevStatus = statusSel.value;
+
+  const orgs = [...new Set(liveInvData.map(r => r.organization?.name).filter(Boolean))].sort();
+  const statuses = [...new Set(liveInvData.map(r => r.deployStatus).filter(Boolean))].sort();
+
+  orgSel.innerHTML = '<option value="">All Organizations</option>' +
+    orgs.map(o => `<option value="${liveInvEsc(o)}">${liveInvEsc(o)}</option>`).join('');
+  statusSel.innerHTML = '<option value="">All Statuses</option>' +
+    statuses.map(s => `<option value="${liveInvEsc(s)}">${liveInvEsc(LIVE_INV_STATUS_LABEL[s] || s)}</option>`).join('');
+
+  if (orgs.includes(prevOrg)) orgSel.value = prevOrg;
+  if (statuses.includes(prevStatus)) statusSel.value = prevStatus;
+}
+
+function liveInvRender() {
+  const search = (document.getElementById('liveInv-search').value || '').toLowerCase().trim();
+  const orgF = document.getElementById('liveInv-orgFilter').value;
+  const statusF = document.getElementById('liveInv-statusFilter').value;
+
+  let rows = liveInvData;
+  if (orgF) rows = rows.filter(r => r.organization?.name === orgF);
+  if (statusF) rows = rows.filter(r => r.deployStatus === statusF);
+  if (search) {
+    rows = rows.filter(r =>
+      (r.serialNumber || '').toLowerCase().includes(search) ||
+      (r.id || '').toLowerCase().includes(search) ||
+      (r.organization?.name || '').toLowerCase().includes(search) ||
+      (r.sku?.vendorSku || '').toLowerCase().includes(search) ||
+      (r.sku?.id || '').toLowerCase().includes(search) ||
+      (r.warehouse?.name || '').toLowerCase().includes(search)
+    );
+  }
+
+  // Stats reflect current filter set
+  const count = (s) => rows.filter(r => r.deployStatus === s).length;
+  document.getElementById('liveInv-statTotal').textContent = rows.length.toLocaleString();
+  document.getElementById('liveInv-statDeployed').textContent = count('DEPLOYED').toLocaleString();
+  document.getElementById('liveInv-statAvailable').textContent = count('AVAILABLE').toLocaleString();
+  document.getElementById('liveInv-statArchived').textContent = count('ARCHIVED').toLocaleString();
+
+  document.getElementById('tabCount-liveInv').textContent = rows.length.toLocaleString();
+  document.getElementById('liveInv-rowCount').textContent = rows.length.toLocaleString();
+
+  // Cap rendered rows for perf; paging can be added later
+  const RENDER_CAP = 1000;
+  document.getElementById('liveInv-pageInfo').textContent =
+    rows.length > RENDER_CAP ? `Showing first ${RENDER_CAP.toLocaleString()} of ${rows.length.toLocaleString()}` : '';
+
+  const body = document.getElementById('liveInv-tableBody');
+  if (rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">No inventory matches your filters</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.slice(0, RENDER_CAP).map(r => {
+    const stCls = liveInvStatusClass(r.deployStatus);
+    const stLabel = LIVE_INV_STATUS_LABEL[r.deployStatus] || r.deployStatus || '—';
+    const shortId = (r.id || '').substring(0, 8);
+    const shortSkuId = (r.sku?.id || '').substring(0, 8);
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:11px" title="${liveInvEsc(r.id)}">${liveInvEsc(shortId)}${r.id && r.id.length > 8 ? '…' : ''}</td>
+      <td style="font-family:var(--mono);font-size:12px">${liveInvEsc(r.serialNumber || '—')}</td>
+      <td>${liveInvEsc(r.organization?.name || '—')}</td>
+      <td style="font-family:var(--mono);font-size:12px">${liveInvEsc(r.sku?.vendorSku || '—')}</td>
+      <td style="font-family:var(--mono);font-size:11px" title="${liveInvEsc(r.sku?.id || '')}">${liveInvEsc(shortSkuId)}${r.sku?.id && r.sku.id.length > 8 ? '…' : ''}</td>
+      <td>${liveInvEsc(r.conditionStatus || '—')}</td>
+      <td><span class="fbinv-badge fbinv-badge-${stCls}">${liveInvEsc(stLabel)}</span></td>
+      <td>${liveInvEsc(whLabel(r.warehouse?.name || '—'))}</td>
+      <td style="text-align:center">${r.active ? '✓' : '✗'}</td>
+      <td style="font-family:var(--mono);font-size:11px">${liveInvEsc(fmtDate(r.createdAt))}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
