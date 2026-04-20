@@ -883,7 +883,7 @@
     </div>
     <div class="page-actions">
       <span id="products-syncText" style="font-size:12px;font-family:var(--mono);color:var(--muted);align-self:center;"></span>
-      <button class="btn btn-primary" onclick="productsFetch(1)" id="products-refreshBtn">↺ Refresh</button>
+      <button class="btn btn-primary" onclick="productsFetch(true)" id="products-refreshBtn">↺ Refresh</button>
     </div>
   </div>
 
@@ -904,13 +904,14 @@
         <thead><tr>
           <th style="width:56px;">Image</th>
           <th>Product Title</th>
+          <th>Product ID</th>
           <th>MPN</th>
           <th>Status</th>
           <th>Category</th>
           <th>Vendor</th>
         </tr></thead>
         <tbody id="products-tableBody">
-          <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">Switch to this tab to load products…</td></tr>
+          <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Switch to this tab to load products…</td></tr>
         </tbody>
       </table>
     </div>
@@ -2308,7 +2309,7 @@ function switchTab(tab) {
     liveInvFetch();
   }
   if (tab === 'products' && !productsLoaded && !productsLoading) {
-    productsFetch(1);
+    productsFetch();
   }
   // fbinv tab is upload-driven — no auto-load needed
 }
@@ -3301,17 +3302,20 @@ function liveInvRender() {
   }).join('');
 }
 
-// ─── PRODUCTS TAB (getAllSKUs via /api/graphql) ──────────────────────────────
+// ─── PRODUCTS TAB (getAllSKUs via /api/graphql, client-side search) ─────────
+// Strategy: one-shot load of the full catalog (paginated in background), then
+// do client-side AND-token substring matching against title + MPN + SKUs +
+// vendor name. This gives "any characters" matching regardless of punctuation.
 let productsLoaded = false;
 let productsLoading = false;
-let productsPage = 1;
-let productsPageSize = 100;
-let productsTotalElements = 0;
-let productsTotalPages = 0;
-let productsData = [];
+let productsLoadError = null;
+let productsAllData = [];            // full catalog, accumulated as pages load
+let productsLoadingProgress = 0;     // 0–1
 let productsSearchTerm = '';
 let productsSearchDebounceId = null;
-let productsReqSeq = 0; // guard against out-of-order responses
+let productsCurrentPage = 1;
+const PRODUCTS_PAGE_SIZE = 100;
+const PRODUCTS_FETCH_PAGE_SIZE = 500; // per API request
 
 function productsEsc(s) {
   return String(s == null ? '' : s)
@@ -3319,32 +3323,60 @@ function productsEsc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Build a lowercased haystack string for each product once
+function productsAttachHaystack(r) {
+  const parts = [
+    r.skuInformation?.productTitle,
+    r.skuInformation?.partNumber,
+    r.alternativeMpn,
+    r.vendorSku,
+    r.vendor?.name,
+    r.category?.nameSingular
+  ].filter(Boolean);
+  r.__hay = parts.join(' \u0001 ').toLowerCase();
+  return r;
+}
+
+function productsMatches(r, tokens) {
+  if (!tokens.length) return true;
+  const hay = r.__hay || '';
+  for (let i = 0; i < tokens.length; i++) {
+    if (hay.indexOf(tokens[i]) === -1) return false;
+  }
+  return true;
+}
+
+function productsTokens(q) {
+  return (q || '').toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
+}
+
 function productsOnSearchInput() {
   clearTimeout(productsSearchDebounceId);
   productsSearchDebounceId = setTimeout(() => {
-    const v = (document.getElementById('products-search').value || '').trim();
-    productsSearchTerm = v;
-    productsFetch(1);
-  }, 300);
+    productsSearchTerm = (document.getElementById('products-search').value || '').trim();
+    productsCurrentPage = 1;
+    productsRender();
+  }, 120);
 }
 
-async function productsFetch(page) {
+async function productsFetch(forceReload) {
   if (productsLoading) return;
+  if (productsLoaded && !forceReload) { productsRender(); return; }
+
   productsLoading = true;
-  productsPage = page || 1;
-  const seq = ++productsReqSeq;
+  productsLoadError = null;
+  productsAllData = [];
+  productsLoadingProgress = 0;
   document.getElementById('products-refreshBtn').disabled = true;
   const syncText = document.getElementById('products-syncText');
   const body = document.getElementById('products-tableBody');
 
-  syncText.textContent = productsSearchTerm
-    ? `Searching "${productsSearchTerm}"…`
-    : `Loading page ${productsPage}…`;
-  body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">Loading products…</td></tr>';
+  syncText.textContent = 'Loading catalog…';
+  body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Loading catalog…</td></tr>';
 
   try {
-    const query = `query GetAllSKUs($p: PagingAndSorting!, $searchTerm: String, $filter: SKUFilter) {
-  getAllSKUs(pagingAndSorting: $p, searchTerm: $searchTerm, filter: $filter) {
+    const query = `query GetAllSKUs($p: PagingAndSorting!, $filter: SKUFilter) {
+  getAllSKUs(pagingAndSorting: $p, filter: $filter) {
     size totalElements totalPages pageNumber
     data {
       id
@@ -3358,42 +3390,52 @@ async function productsFetch(page) {
     }
   }
 }`;
-    const variables = {
-      p: {
-        pageNumber: productsPage,
-        pageSize: productsPageSize,
-        sort: [{ field: 'skuInformation.productTitle', direction: 'ASC' }]
-      },
-      searchTerm: productsSearchTerm || '',
-      filter: { excludeCategories: ['WARRANTY'] }
-    };
 
-    const res = await fetch(API_GRAPHQL_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables })
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+    let pageNumber = 1;
+    let totalPages = 1;
+    let totalElements = 0;
+    const MAX_PAGES = 80; // safety cap (would be ~40k products at pageSize 500)
 
-    // Drop stale responses
-    if (seq !== productsReqSeq) { productsLoading = false; return; }
+    while (pageNumber <= totalPages && pageNumber <= MAX_PAGES) {
+      const variables = {
+        p: {
+          pageNumber,
+          pageSize: PRODUCTS_FETCH_PAGE_SIZE,
+          sort: [{ field: 'skuInformation.productTitle', direction: 'ASC' }]
+        },
+        filter: { excludeCategories: ['WARRANTY'] }
+      };
 
-    const page = json.data?.getAllSKUs;
-    if (!page) throw new Error('No data returned');
-    productsData = page.data || [];
-    productsTotalElements = page.totalElements || 0;
-    productsTotalPages = page.totalPages || 0;
+      const res = await fetch(API_GRAPHQL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+
+      const apiPage = json.data?.getAllSKUs;
+      if (!apiPage) throw new Error('No data returned');
+
+      totalPages = apiPage.totalPages || 1;
+      totalElements = apiPage.totalElements || 0;
+
+      (apiPage.data || []).forEach(r => productsAllData.push(productsAttachHaystack(r)));
+      productsLoadingProgress = Math.min(1, productsAllData.length / Math.max(1, totalElements));
+
+      syncText.textContent = `Loading… ${productsAllData.length.toLocaleString()} of ${totalElements.toLocaleString()}`;
+      // Render partial progress so the user sees something
+      productsRender();
+      pageNumber++;
+    }
+
     productsLoaded = true;
+    syncText.textContent = `${productsAllData.length.toLocaleString()} products loaded`;
     productsRender();
-
-    syncText.textContent = productsSearchTerm
-      ? `${productsTotalElements.toLocaleString()} products match "${productsSearchTerm}"`
-      : `${productsTotalElements.toLocaleString()} products in catalog`;
   } catch (e) {
-    if (seq !== productsReqSeq) { productsLoading = false; return; }
-    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--red)">Error: ${productsEsc(e.message)}</td></tr>`;
+    productsLoadError = e.message;
+    body.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--red)">Error: ${productsEsc(e.message)}</td></tr>`;
     syncText.textContent = 'Load failed';
   } finally {
     productsLoading = false;
@@ -3411,6 +3453,12 @@ function productsStatusBadge(status) {
   return `<span class="fbinv-badge fbinv-badge-other">${productsEsc(s || '—')}</span>`;
 }
 
+function productsFiltered() {
+  const tokens = productsTokens(productsSearchTerm);
+  if (!tokens.length) return productsAllData;
+  return productsAllData.filter(r => productsMatches(r, tokens));
+}
+
 function productsRender() {
   const body = document.getElementById('products-tableBody');
   const rowCount = document.getElementById('products-rowCount');
@@ -3418,22 +3466,34 @@ function productsRender() {
   const tabCount = document.getElementById('tabCount-products');
   const pagingInfo = document.getElementById('products-paging-info');
 
-  rowCount.textContent = productsData.length.toLocaleString();
-  tabCount.textContent = productsTotalElements.toLocaleString();
+  const filtered = productsFiltered();
+  const totalFilt = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilt / PRODUCTS_PAGE_SIZE));
+  if (productsCurrentPage > totalPages) productsCurrentPage = totalPages;
+  if (productsCurrentPage < 1) productsCurrentPage = 1;
 
-  const startIdx = ((productsPage - 1) * productsPageSize) + 1;
-  const endIdx = Math.min(startIdx + productsData.length - 1, productsTotalElements);
-  pageInfo.textContent = productsTotalElements
-    ? `Showing ${startIdx.toLocaleString()}–${endIdx.toLocaleString()} of ${productsTotalElements.toLocaleString()}`
+  const startIdx = (productsCurrentPage - 1) * PRODUCTS_PAGE_SIZE;
+  const pageRows = filtered.slice(startIdx, startIdx + PRODUCTS_PAGE_SIZE);
+
+  rowCount.textContent = totalFilt.toLocaleString();
+  tabCount.textContent = (productsSearchTerm ? totalFilt : productsAllData.length).toLocaleString();
+
+  const endShown = startIdx + pageRows.length;
+  pageInfo.textContent = totalFilt
+    ? `Showing ${(startIdx + 1).toLocaleString()}–${endShown.toLocaleString()} of ${totalFilt.toLocaleString()}${productsSearchTerm ? ` match${totalFilt === 1 ? '' : 'es'}` : ''}`
     : '';
-  pagingInfo.textContent = productsTotalPages
-    ? `Page ${productsPage} of ${productsTotalPages.toLocaleString()}`
+  pagingInfo.textContent = totalFilt
+    ? `Page ${productsCurrentPage} of ${totalPages.toLocaleString()}`
     : '—';
 
-  if (productsData.length === 0) {
-    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">No products match${productsSearchTerm ? ` "${productsEsc(productsSearchTerm)}"` : ''}</td></tr>`;
+  if (pageRows.length === 0) {
+    if (productsLoading && productsAllData.length === 0) {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Loading catalog…</td></tr>';
+    } else {
+      body.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No products match${productsSearchTerm ? ` "${productsEsc(productsSearchTerm)}"` : ''}</td></tr>`;
+    }
   } else {
-    body.innerHTML = productsData.map(r => {
+    body.innerHTML = pageRows.map(r => {
       const title = r.skuInformation?.productTitle || '(untitled)';
       const mpn = r.skuInformation?.partNumber || r.alternativeMpn || r.vendorSku || '—';
       const category = r.category?.nameSingular || '—';
@@ -3442,9 +3502,16 @@ function productsRender() {
       const imgCell = img
         ? `<img src="${productsEsc(img)}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:4px;background:var(--surface3);" loading="lazy" onerror="this.style.display='none'">`
         : `<div style="width:40px;height:40px;border-radius:4px;background:var(--surface3);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;">—</div>`;
+      const id = r.id || '';
+      const shortId = id.substring(0, 8) + (id.length > 8 ? '…' : '');
+      // btn-copy class matches the other copy buttons; data-* attrs feed the handler
+      const copyBtn = id
+        ? `<button class="btn-copy" data-pid="${productsEsc(id)}" data-ptitle="${productsEsc(title)}" onclick="productsCopyIdAndTitle(this)" title="Copy Product ID + Title">⎘</button>`
+        : '';
       return `<tr>
         <td>${imgCell}</td>
         <td style="font-weight:500">${productsEsc(title)}</td>
+        <td style="white-space:nowrap"><span style="font-family:var(--mono);font-size:11px" title="${productsEsc(id)}">${productsEsc(shortId)}</span>${copyBtn}</td>
         <td style="font-family:var(--mono);font-size:12px">${productsEsc(mpn)}</td>
         <td>${productsStatusBadge(r.status)}</td>
         <td>${productsEsc(category)}</td>
@@ -3453,16 +3520,60 @@ function productsRender() {
     }).join('');
   }
 
-  // Pagination buttons: First, Prev, nearby pages, Next, Last
+  // Pagination buttons
   const btnsEl = document.getElementById('products-pg-btns');
-  const btns = [];
-  const atStart = productsPage <= 1;
-  const atEnd = productsPage >= productsTotalPages;
-  btns.push(`<button onclick="productsFetch(1)" ${atStart ? 'disabled' : ''}>«</button>`);
-  btns.push(`<button onclick="productsFetch(${productsPage - 1})" ${atStart ? 'disabled' : ''}>‹ Prev</button>`);
-  btns.push(`<button onclick="productsFetch(${productsPage + 1})" ${atEnd ? 'disabled' : ''}>Next ›</button>`);
-  btns.push(`<button onclick="productsFetch(${productsTotalPages})" ${atEnd ? 'disabled' : ''}>»</button>`);
-  btnsEl.innerHTML = btns.join('');
+  const atStart = productsCurrentPage <= 1;
+  const atEnd = productsCurrentPage >= totalPages;
+  btnsEl.innerHTML = [
+    `<button onclick="productsGoPage(1)" ${atStart ? 'disabled' : ''}>«</button>`,
+    `<button onclick="productsGoPage(${productsCurrentPage - 1})" ${atStart ? 'disabled' : ''}>‹ Prev</button>`,
+    `<button onclick="productsGoPage(${productsCurrentPage + 1})" ${atEnd ? 'disabled' : ''}>Next ›</button>`,
+    `<button onclick="productsGoPage(${totalPages})" ${atEnd ? 'disabled' : ''}>»</button>`
+  ].join('');
+}
+
+function productsGoPage(n) {
+  productsCurrentPage = n;
+  productsRender();
+}
+
+function productsCopyIdAndTitle(btn) {
+  const id = btn.getAttribute('data-pid') || '';
+  const title = btn.getAttribute('data-ptitle') || '';
+  // Tab-delimited so it pastes into two spreadsheet columns
+  const payload = `${id}\t${title}`;
+  const done = () => {
+    btn.classList.add('copied');
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = orig;
+    }, 1200);
+  };
+  const fail = () => {
+    btn.textContent = '✗';
+    setTimeout(() => { btn.textContent = '⎘'; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(payload).then(done).catch(() => {
+      // Fallback for non-secure contexts
+      productsCopyFallback(payload) ? done() : fail();
+    });
+  } else {
+    productsCopyFallback(payload) ? done() : fail();
+  }
+}
+
+function productsCopyFallback(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
