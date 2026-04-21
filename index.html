@@ -840,6 +840,9 @@
     <select id="liveInv-orgFilter" onchange="liveInvRender()" style="min-width:200px;">
       <option value="">All Organizations</option>
     </select>
+    <select id="liveInv-warehouseFilter" onchange="liveInvRender()" style="min-width:180px;">
+      <option value="">All Warehouses</option>
+    </select>
     <select id="liveInv-statusFilter" onchange="liveInvRender()" style="min-width:180px;">
       <option value="">All Statuses</option>
     </select>
@@ -3226,29 +3229,37 @@ async function liveInvFetch() {
 function liveInvPopulateFilters() {
   // Preserve current selections if still valid
   const orgSel = document.getElementById('liveInv-orgFilter');
+  const warehouseSel = document.getElementById('liveInv-warehouseFilter');
   const statusSel = document.getElementById('liveInv-statusFilter');
   const prevOrg = orgSel.value;
+  const prevWarehouse = warehouseSel.value;
   const prevStatus = statusSel.value;
 
   const orgs = [...new Set(liveInvData.map(r => r.organization?.name).filter(Boolean))].sort();
+  const warehouses = [...new Set(liveInvData.map(r => r.warehouse?.name).filter(Boolean))].sort();
   const statuses = [...new Set(liveInvData.map(r => r.deployStatus).filter(Boolean))].sort();
 
   orgSel.innerHTML = '<option value="">All Organizations</option>' +
     orgs.map(o => `<option value="${liveInvEsc(o)}">${liveInvEsc(o)}</option>`).join('');
+  warehouseSel.innerHTML = '<option value="">All Warehouses</option>' +
+    warehouses.map(w => `<option value="${liveInvEsc(w)}">${liveInvEsc(whLabel(w))}</option>`).join('');
   statusSel.innerHTML = '<option value="">All Statuses</option>' +
     statuses.map(s => `<option value="${liveInvEsc(s)}">${liveInvEsc(LIVE_INV_STATUS_LABEL[s] || s)}</option>`).join('');
 
   if (orgs.includes(prevOrg)) orgSel.value = prevOrg;
+  if (warehouses.includes(prevWarehouse)) warehouseSel.value = prevWarehouse;
   if (statuses.includes(prevStatus)) statusSel.value = prevStatus;
 }
 
 function liveInvRender() {
   const search = (document.getElementById('liveInv-search').value || '').toLowerCase().trim();
   const orgF = document.getElementById('liveInv-orgFilter').value;
+  const warehouseF = document.getElementById('liveInv-warehouseFilter').value;
   const statusF = document.getElementById('liveInv-statusFilter').value;
 
   let rows = liveInvData;
   if (orgF) rows = rows.filter(r => r.organization?.name === orgF);
+  if (warehouseF) rows = rows.filter(r => r.warehouse?.name === warehouseF);
   if (statusF) rows = rows.filter(r => r.deployStatus === statusF);
   if (search) {
     rows = rows.filter(r =>
