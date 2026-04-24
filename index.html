@@ -1096,6 +1096,16 @@ function invClearAll()   {
   showToast('Local inventory orders cleared');
 }
 
+// Extract the 9-digit FB PO Number from an InventoryOrder's free-text
+// notes/reason fields. Uses the same regex as the PO Matcher (pmExtractPOs)
+// so the PO format stays consistent across the app. customerPoNumber is
+// intentionally ignored — the FB PO lives in notes/reason only.
+function invPoFallback(order) {
+  const text = ((order && order.notes) || '') + ' ' + ((order && order.reason) || '');
+  const m = text.match(/\b(\d{9})\b/);
+  return m ? m[1] : '';
+}
+
 async function invFetchFromAPI() {
   setSyncStatus('syncing', 'Fetching orders…');
   try {
@@ -1115,7 +1125,6 @@ async function invFetchFromAPI() {
       createdAt
       updatedAt
       trackingNumber
-      customerPoNumber
       reason
       firstbaseSupplied
       notes
@@ -1235,7 +1244,7 @@ async function invFetchFromAPI() {
         organization: order.organization?.name || '',
         warehouse: wh,
         country: '',
-        po_number: order.customerPoNumber || '',
+        po_number: invPoFallback(order),
         created_date: order.createdAt ? new Date(order.createdAt).toISOString().split('T')[0] : '',
         order_status: order.status || '',
         reason: order.reason || '',
