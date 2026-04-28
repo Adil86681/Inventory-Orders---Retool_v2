@@ -2407,7 +2407,10 @@ function switchTab(tab) {
   if (tab === 'adil') {
     adilLoadFrame();
   }
-  // Inventory + Products tabs are load-on-demand — user clicks "Load" or "Refresh".
+  if (tab === 'liveInv' && !liveInvLoaded && !liveInvLoading) {
+    liveInvFetch();
+  }
+  // Products tab is load-on-demand — user clicks "Load" or "Refresh".
   // fbinv tab is upload-driven — no auto-load needed.
 }
 
@@ -3334,10 +3337,6 @@ function liveInvEsc(s) {
 async function liveInvFetch() {
   if (liveInvLoading) return;
   const selectedOrgs = liveInvSelectedOrgs();
-  if (!selectedOrgs.length) {
-    alert('Please select at least one organisation before loading.');
-    return;
-  }
   liveInvLoading = true;
   const loadBtn = document.getElementById('liveInv-loadBtn');
   const refreshBtn = document.getElementById('liveInv-refreshBtn');
@@ -3347,10 +3346,8 @@ async function liveInvFetch() {
   const body = document.getElementById('liveInv-tableBody');
   body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted)">Fetching inventory from Firstbase…</td></tr>';
 
-  // Resolve selected orgs to ids (where known) so we can filter server-side
+  // Client-side org filtering only (server-side organizationIds filter not supported)
   const selectedSet = new Set(selectedOrgs);
-  const orgIds = selectedOrgs.map(n => invOrgIdMap[n]).filter(Boolean);
-  const haveAllIds = orgIds.length === selectedOrgs.length;
 
   try {
     const all = [];
@@ -3358,24 +3355,8 @@ async function liveInvFetch() {
     let pageNumber = 1;
     let totalElements = 0;
     let totalPages = 0;
-    let serverFilterActive = haveAllIds;
-    let serverFilterTried = false;
 
-    while (true) {
-      // Try server-side filter first (organizationIds). If the API rejects the
-      // filter shape, fall back to no-filter and rely on client-side filtering.
-      const queryWithFilter = `query GetAllInventories($paging: PagingAndSorting!, $filter: InventoryFilter) {
-  getAllInventories(pagingAndSorting: $paging, filter: $filter) {
-    totalElements totalPages pageNumber size
-    data {
-      id serialNumber active conditionStatus deployStatus createdAt
-      organization { id name }
-      sku { id vendorSku }
-      warehouse { id name }
-    }
-  }
-}`;
-      const queryNoFilter = `query GetAllInventories($paging: PagingAndSorting!) {
+    const liveInvQuery = `query GetAllInventories($paging: PagingAndSorting!) {
   getAllInventories(pagingAndSorting: $paging) {
     totalElements totalPages pageNumber size
     data {
@@ -3387,33 +3368,19 @@ async function liveInvFetch() {
   }
 }`;
 
-      const useServerFilter = serverFilterActive;
-      const variables = useServerFilter
-        ? {
-            paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
-            filter: { organizationIds: orgIds }
-          }
-        : {
-            paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] }
-          };
-
+    while (true) {
       syncText.textContent = `Loading page ${pageNumber}${totalPages ? '/' + totalPages : ''}… (${all.length.toLocaleString()} rows so far)`;
 
       const res = await fetch(API_GRAPHQL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: useServerFilter ? queryWithFilter : queryNoFilter, variables })
+        body: JSON.stringify({
+          query: liveInvQuery,
+          variables: { paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] } }
+        })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
-
-      // If the server-filter shape is rejected, fall back gracefully on the FIRST page.
-      if (json.errors && useServerFilter && !serverFilterTried) {
-        console.warn('Server-side org filter not accepted, falling back to client-side filter:', json.errors);
-        serverFilterActive = false;
-        serverFilterTried = true;
-        continue; // retry same page without filter
-      }
       if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
 
       const page = json.data?.getAllInventories;
@@ -3425,7 +3392,9 @@ async function liveInvFetch() {
       });
 
       // Client-side filter by selected orgs (works as backup AND when server-filter is on)
-      const kept = (page.data || []).filter(r => selectedSet.has(r.organization?.name || ''));
+      const kept = selectedOrgs.length > 0
+        ? (page.data || []).filter(r => selectedSet.has(r.organization?.name || ''))
+        : (page.data || []);
       all.push(...kept);
 
       totalElements = page.totalElements || 0;
@@ -3816,7 +3785,6 @@ function productsCopyFallback(text) {
 invLoadState();
 csLoadState();
 commentsLoad();
-invPopulateOrgPicker();
 invRenderAll();
 csRenderAll();
 
