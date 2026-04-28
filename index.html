@@ -1161,7 +1161,7 @@ async function invFetchFromAPI() {
         body: JSON.stringify({
           query: invGqlQuery,
           variables: {
-            paging: { pageNumber, size: pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
+            paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
             filter: { statuses: ['ORDERED', 'PROCESSING', 'SHIPPED'], firstbaseSupplied: true }
           }
         })
@@ -1622,7 +1622,7 @@ async function csFetchFromAPI() {
       const variables = {
         paging: {
           pageNumber: pageNumber,
-          size: pageSize,
+          pageSize: pageSize,
           sort: [{ field: 'createdAt', direction: 'DESC' }]
         },
         filter: {
