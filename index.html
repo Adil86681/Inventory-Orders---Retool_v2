@@ -1163,7 +1163,7 @@ async function invFetchFromAPI() {
         body: JSON.stringify({
           query: invGqlQuery,
           variables: {
-            paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
+            paging: { pageNumber, size: pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
             filter: { statuses: ['ORDERED', 'PROCESSING', 'SHIPPED'], firstbaseSupplied: true }
           }
         })
@@ -1180,9 +1180,16 @@ async function invFetchFromAPI() {
     const allOrders = [...(firstPage?.data || [])];
 
     if (totalPages > 1) {
-      setSyncStatus('syncing', `Fetching ${totalPages} pages in parallel…`);
+      setSyncStatus('syncing', `Fetching all ${totalPages} pages in parallel…`);
+      let done = 1;
       const rest = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, i) => invFetchPage(i + 2))
+        Array.from({ length: totalPages - 1 }, (_, i) => 
+          invFetchPage(i + 2).then(p => { 
+            done++;
+            setSyncStatus('syncing', `Loading ${done}/${totalPages} pages…`);
+            return p;
+          })
+        )
       );
       rest.forEach(page => allOrders.push(...(page?.data || [])));
     }
@@ -1421,7 +1428,9 @@ function invGetFiltered() {
   const cats = [...document.querySelectorAll('#inv-categoryMenu input:checked')].map(c=>c.value);
   const custs = [...document.querySelectorAll('#inv-customerMenu input:checked')].map(c=>c.value);
   const checked = [...document.querySelectorAll('#inv-statusMenu input:checked')].map(c=>c.value);
+  const selOrgs = [...document.querySelectorAll('#inv-orgMenu input:checked')].map(c=>c.value);
   return Object.values(invOrders).filter(o => {
+    if (selOrgs.length && !selOrgs.includes(o.organization)) return false;
     if (whs.length   && !whs.includes(o.warehouse))     return false;
     if (custs.length && !custs.includes(o.organization)) return false;
     if (cats.length  && !o.items.some(it => cats.includes(it.brand))) return false;
@@ -1617,7 +1626,7 @@ async function csFetchFromAPI() {
       const variables = {
         paging: {
           pageNumber: pageNumber,
-          pageSize: pageSize,
+          size: pageSize,
           sort: [{ field: 'createdAt', direction: 'DESC' }]
         },
         filter: {
