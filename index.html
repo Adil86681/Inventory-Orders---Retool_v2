@@ -1125,13 +1125,9 @@ function invPoFallback(order) {
 async function invFetchFromAPI() {
   setSyncStatus('syncing', 'Fetching orders…');
   try {
-    const allOrders = [];
-    let pageNumber = 1;
-    const pageSize = 100;
-    let hasMore = true;
+    const pageSize = 250;
 
-    while (hasMore) {
-      const query = `query GetInventoryOrders($paging: PagingAndSorting!, $filter: InventoryOrderFilter) {
+    const invGqlQuery = `query GetInventoryOrders($paging: PagingAndSorting!, $filter: InventoryOrderFilter) {
   getInventoryOrdersPaginated(pagingAndSorting: $paging, filter: $filter) {
     data {
       id
@@ -1160,37 +1156,35 @@ async function invFetchFromAPI() {
   }
 }`;
 
-      const variables = {
-        paging: {
-          pageNumber: pageNumber,
-          pageSize: pageSize,
-          sort: [{ field: 'createdAt', direction: 'DESC' }]
-        },
-        filter: {
-          statuses: ['ORDERED', 'PROCESSING', 'SHIPPED'],
-          firstbaseSupplied: true
-        }
-      };
-
+    const invFetchPage = async (pageNumber) => {
       const res = await fetch(API_GRAPHQL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables })
+        body: JSON.stringify({
+          query: invGqlQuery,
+          variables: {
+            paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
+            filter: { statuses: ['ORDERED', 'PROCESSING', 'SHIPPED'], firstbaseSupplied: true }
+          }
+        })
       });
-
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
+      if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+      return json.data?.getInventoryOrdersPaginated;
+    };
 
-      if (json.errors) {
-        throw new Error(json.errors.map(e => e.message).join('; '));
-      }
+    // Fetch page 1 to discover total pages, then fire all remaining pages in parallel
+    const firstPage = await invFetchPage(1);
+    const totalPages = firstPage?.totalPages || 1;
+    const allOrders = [...(firstPage?.data || [])];
 
-      const pageData = json.data?.getInventoryOrdersPaginated?.data || [];
-      allOrders.push(...pageData);
-
-      const totalPages = json.data?.getInventoryOrdersPaginated?.totalPages || 0;
-      pageNumber++;
-      hasMore = pageNumber < totalPages;
+    if (totalPages > 1) {
+      setSyncStatus('syncing', `Fetching ${totalPages} pages in parallel…`);
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) => invFetchPage(i + 2))
+      );
+      rest.forEach(page => allOrders.push(...(page?.data || [])));
     }
 
     // Transform API response to internal format
