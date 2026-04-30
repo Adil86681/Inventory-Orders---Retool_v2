@@ -640,6 +640,23 @@
 .kpi-empty { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 13px; }
 .kpi-loading { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 13px; }
 
+/* ─── Live Pipeline section ───────────────────────────────────────────────── */
+.kpi-pipeline-section { margin-bottom: 24px; }
+.kpi-pipeline-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.kpi-pipeline-note { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.kpi-pipeline-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media(max-width:600px) { .kpi-pipeline-cards { grid-template-columns: 1fr; } }
+.kpi-pipeline-wh { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; min-height: 22px; }
+.kpi-pipeline-wh-chip {
+  font-size: 11px; font-family: var(--mono);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 8px; color: var(--text2);
+}
+
 .kpi-controls {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
   margin-bottom: 16px;
@@ -1149,6 +1166,24 @@
       <option value="shipped_facility">Shipped → At facility</option>
     </select>
     <span id="kpiDashStatus" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
+  </div>
+
+  <div class="kpi-pipeline-section">
+    <div class="kpi-pipeline-label">Live Pipeline <span class="kpi-pipeline-note">· orders currently in flight, from API</span></div>
+    <div class="kpi-pipeline-cards">
+      <div class="kpi-card amber">
+        <div class="kpi-card-label">In Transit</div>
+        <div class="kpi-card-value" id="pipeVal-shipped">—</div>
+        <div class="kpi-card-sub">orders shipped, en route to facility</div>
+        <div class="kpi-pipeline-wh" id="pipeWh-shipped"></div>
+      </div>
+      <div class="kpi-card" style="border-color:rgba(124,58,237,0.25)">
+        <div class="kpi-card-label" style="color:var(--purple)">At Facility</div>
+        <div class="kpi-card-value" style="color:var(--purple)" id="pipeVal-facility">—</div>
+        <div class="kpi-card-sub">orders arrived, awaiting processing</div>
+        <div class="kpi-pipeline-wh" id="pipeWh-facility"></div>
+      </div>
+    </div>
   </div>
 
   <div class="kpi-cards">
@@ -1700,6 +1735,7 @@ function kpiFilterRows() {
 
 function kpiDashRender() {
   const rows = kpiFilterRows();
+  kpiRenderPipeline();
   kpiRenderCards(rows);
   kpiRenderTrendChart(rows);
   kpiRenderHistogram(rows);
@@ -1956,6 +1992,41 @@ function kpiRenderWarehouseTable(rows) {
   }).join('');
 }
 
+// ─── LIVE PIPELINE ───────────────────────────────────────────────────────────
+// Reads from invOrders (live API data, not the sheet) to show how many orders
+// are currently in transit vs sitting at facility waiting to be processed.
+function kpiRenderPipeline() {
+  const whFilter = (document.getElementById('kpiWh') || {}).value || '';
+  const all = Object.values(typeof invOrders !== 'undefined' ? invOrders : {});
+
+  const TRANSIT = new Set(['SHIPPED', 'PARTIALLY_SHIPPED', 'OUT_FOR_DELIVERY', 'IN_TRANSIT']);
+
+  const inTransit  = all.filter(o => (!whFilter || o.warehouse === whFilter) && TRANSIT.has(o.itemStatus));
+  const atFacility = all.filter(o => (!whFilter || o.warehouse === whFilter) && o.itemStatus === 'ARRIVED_AT_PROCESSING_FACILITY');
+
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setText('pipeVal-shipped',  inTransit.length  === 0 && all.length === 0 ? '—' : String(inTransit.length));
+  setText('pipeVal-facility', atFacility.length === 0 && all.length === 0 ? '—' : String(atFacility.length));
+
+  function renderChips(orders, id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (orders.length === 0) { el.innerHTML = ''; return; }
+    const byWh = {};
+    orders.forEach(o => {
+      const w = (o.warehouse || '').replace('Warehouse - ', '') || '?';
+      byWh[w] = (byWh[w] || 0) + 1;
+    });
+    el.innerHTML = Object.entries(byWh)
+      .sort((a, b) => b[1] - a[1])
+      .map(([w, n]) => `<span class="kpi-pipeline-wh-chip">${escapeHTML(w)}: ${n}</span>`)
+      .join('');
+  }
+
+  renderChips(inTransit,  'pipeWh-shipped');
+  renderChips(atFacility, 'pipeWh-facility');
+}
+
 function escapeHTML(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -2176,6 +2247,7 @@ async function invFetchFromAPI() {
     updateLastUpdated();
     setSyncStatus('ok', 'Synced');
     invRenderAll();
+    try { kpiRenderPipeline(); } catch(e) {}
     if (typeof liveInvPopulateOrgPicker === 'function') liveInvPopulateOrgPicker();
     startRefreshCountdown();
   } catch(err) {
