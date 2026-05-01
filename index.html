@@ -655,33 +655,7 @@
   font-size: 11px; font-family: var(--mono);
   background: var(--surface2); border: 1px solid var(--border);
   border-radius: 4px; padding: 2px 8px; color: var(--text2);
-  position: relative; cursor: default;
 }
-.kpi-pipeline-wh-chip:hover { border-color: var(--accent); color: var(--accent2); background: rgba(61,111,255,0.08); }
-.kpi-wh-tooltip {
-  display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-  background: var(--surface); border: 1px solid var(--border2);
-  border-radius: 8px; padding: 8px 12px; min-width: 220px; max-width: 320px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.13); z-index: 9999;
-  pointer-events: none;
-}
-.kpi-wh-tooltip::after {
-  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  border: 6px solid transparent; border-top-color: var(--border2);
-}
-.kpi-pipeline-wh-chip:hover .kpi-wh-tooltip { display: block; }
-.kpi-wh-tooltip-title {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); margin-bottom: 6px;
-}
-.kpi-wh-tooltip-row {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-size: 11px; padding: 3px 0; border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.kpi-wh-tooltip-row:last-child { border-bottom: none; }
-.kpi-wh-tooltip-id { color: var(--accent2); font-weight: 600; }
-.kpi-wh-tooltip-org { color: var(--text2); overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 
 .kpi-controls {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
@@ -746,7 +720,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Inventory Orders</h1>
-      <p>All Warehouses (excl. SLC) — Live from API</p>
+      <p>All Warehouses (excl. SLC, EU, UK) — Live from API</p>
     </div>
     <div class="page-actions" style="align-items:center;gap:10px">
       <div class="ms-wrap" style="min-width:210px">
@@ -837,7 +811,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Customer Supplied Orders</h1>
-      <p>All Warehouses (excl. SLC) — Live from API</p>
+      <p>All Warehouses (excl. SLC, EU, UK) — Live from API</p>
     </div>
     <div class="page-actions">
       <button class="btn btn-primary" onclick="csClearAll()">Clear Local</button>
@@ -942,7 +916,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Inventory</h1>
-      <p id="liveInv-subtitle">Live from Firstbase API · excl. Warehouse SLC</p>
+      <p id="liveInv-subtitle">Live from Firstbase API · excl. Warehouses SLC, EU, UK and demo / Stark customers</p>
     </div>
     <div class="page-actions">
       <span id="liveInv-syncText" style="font-size:12px;font-family:var(--mono);color:var(--muted);align-self:center;"></span>
@@ -1427,7 +1401,9 @@ function kpiProcessOrders(allOrders) {
   allOrders.forEach(order => {
     const fid = order.friendlyOrderId || order.id;
     const wh = order.warehouse?.name || '';
+    const orgName = order.organization?.name || '';
     if (isBlockedWarehouse(wh)) return;
+    if (isBlockedCustomer(orgName)) return;
     seenFids.add(fid);
 
     const items = order.inventoryOrderItems || [];
@@ -1578,7 +1554,9 @@ async function kpiFetchCompletedBackstop() {
     completed.forEach(order => {
       const fid = order.friendlyOrderId || order.id;
       const wh = order.warehouse?.name || '';
+      const orgName = order.organization?.name || '';
       if (isBlockedWarehouse(wh)) return;
+      if (isBlockedCustomer(orgName)) return;
 
       const items = order.inventoryOrderItems || [];
       const meta = kpiBuildMeta(order, items);
@@ -1637,10 +1615,476 @@ async function kpiFetchCompletedBackstop() {
 // Reads rows from the KPI_Tracker sheet (via the same Apps Script web app's
 // GET ?action=read endpoint), computes SLO metrics, renders cards/charts/tables.
 
-const KPI_SLO_HOURS = 48;         // < 2 days from at_facility -> completed
-const KPI_SLO_SHIPPED_HOURS = 72; // < 3 days from shipped -> at_facility
+const KPI_SLO_HOURS = 48;         // < 2 working days from at_facility -> completed
+const KPI_SLO_SHIPPED_HOURS = 72; // < 3 working days from shipped -> at_facility
+
+// ─── HOLIDAY-AWARE BUSINESS-HOURS HELPERS ─────────────────────────────
+// Computes elapsed hours between two dates while skipping weekends and the
+// public holidays of the warehouse's country. The model is "full 24h business
+// day": each working day contributes the wall-clock hours that fall within
+// that UTC day; weekends and holidays contribute 0. Country is auto-detected
+// from the warehouse's name. Days are evaluated in UTC, which introduces a
+// small (<1 day) offset for warehouses far from UTC; if needed, swap to a
+// per-country IANA timezone via Intl.DateTimeFormat.
+
+// Easter Sunday for a given Gregorian year (Anonymous Gregorian algorithm).
+function kpiEasterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31); // 3 or 4
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+function kpiAddDaysUTC(date, days) {
+  const d = new Date(date.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+function kpiYmdUTC(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+// nth (1..5) weekday (0=Sun..6=Sat) of (year, month=1..12) → "YYYY-MM-DD"
+function kpiNthWeekday(year, month, weekday, n) {
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const firstWd = first.getUTCDay();
+  const day = 1 + ((weekday - firstWd + 7) % 7) + (n - 1) * 7;
+  return kpiYmdUTC(new Date(Date.UTC(year, month - 1, day)));
+}
+// last weekday of (year, month) → "YYYY-MM-DD"
+function kpiLastWeekday(year, month, weekday) {
+  const last = new Date(Date.UTC(year, month, 0));
+  const lastDay = last.getUTCDate();
+  const lastWd = last.getUTCDay();
+  const day = lastDay - ((lastWd - weekday + 7) % 7);
+  return kpiYmdUTC(new Date(Date.UTC(year, month - 1, day)));
+}
+
+// Returns a Set<"YYYY-MM-DD"> of public holidays for `country` (ISO-3166
+// alpha-2) in `year`. Cached per (country, year). Easter-derived holidays
+// are computed; fixed-date holidays use kpiFixed(); nth-weekday holidays
+// use kpiNthWeekday() / kpiLastWeekday().
+function kpiHolidaysFor(country, year) {
+  if (!country) return new Set();
+  const cache = kpiHolidaysFor._cache || (kpiHolidaysFor._cache = {});
+  const key = country + '_' + year;
+  if (cache[key]) return cache[key];
+  const set = new Set();
+  const fix = (m, d) => `${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const easter      = kpiEasterSunday(year);
+  const goodFriday  = kpiYmdUTC(kpiAddDaysUTC(easter, -2));
+  const easterMon   = kpiYmdUTC(kpiAddDaysUTC(easter, 1));
+  const easterSun   = kpiYmdUTC(easter);
+  const ascension   = kpiYmdUTC(kpiAddDaysUTC(easter, 39));
+  const whitMonday  = kpiYmdUTC(kpiAddDaysUTC(easter, 50));
+  switch (country) {
+    case 'US':
+      set.add(fix(1,1));
+      set.add(kpiNthWeekday(year, 1, 1, 3));   // MLK Day
+      set.add(kpiNthWeekday(year, 2, 1, 3));   // Presidents' Day
+      set.add(kpiLastWeekday(year, 5, 1));     // Memorial Day
+      set.add(fix(6,19));                      // Juneteenth
+      set.add(fix(7,4));                       // Independence Day
+      set.add(kpiNthWeekday(year, 9, 1, 1));   // Labor Day
+      set.add(kpiNthWeekday(year, 10, 1, 2));  // Columbus / Indigenous Peoples
+      set.add(fix(11,11));                     // Veterans Day
+      set.add(kpiNthWeekday(year, 11, 4, 4));  // Thanksgiving
+      set.add(fix(12,25));
+      break;
+    case 'GB':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(kpiNthWeekday(year, 5, 1, 1));   // Early May
+      set.add(kpiLastWeekday(year, 5, 1));     // Spring
+      set.add(kpiLastWeekday(year, 8, 1));     // Summer
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'DE':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(10,3));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'NL':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterSun);
+      set.add(easterMon);
+      set.add(fix(4,27));                      // Koningsdag
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'FR':
+      set.add(fix(1,1));
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(fix(5,8));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(7,14));
+      set.add(fix(8,15));
+      set.add(fix(11,1));
+      set.add(fix(11,11));
+      set.add(fix(12,25));
+      break;
+    case 'ES':
+      set.add(fix(1,1));
+      set.add(fix(1,6));
+      set.add(goodFriday);
+      set.add(fix(5,1));
+      set.add(fix(8,15));
+      set.add(fix(10,12));
+      set.add(fix(11,1));
+      set.add(fix(12,6));
+      set.add(fix(12,8));
+      set.add(fix(12,25));
+      break;
+    case 'IE':
+      set.add(fix(1,1));
+      set.add(fix(2,1));                       // St Brigid's
+      set.add(fix(3,17));                      // St Patrick's
+      set.add(easterMon);
+      set.add(kpiNthWeekday(year, 5, 1, 1));   // 1st Mon May
+      set.add(kpiNthWeekday(year, 6, 1, 1));   // 1st Mon June
+      set.add(kpiNthWeekday(year, 8, 1, 1));   // 1st Mon Aug
+      set.add(kpiLastWeekday(year, 10, 1));    // last Mon Oct
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'CA':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(fix(7,1));                       // Canada Day
+      set.add(kpiNthWeekday(year, 9, 1, 1));   // Labour Day
+      set.add(kpiNthWeekday(year, 10, 1, 2));  // Thanksgiving CA
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'AU':
+      set.add(fix(1,1));
+      set.add(fix(1,26));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(4,25));                      // ANZAC
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'JP':
+      set.add(fix(1,1));
+      set.add(kpiNthWeekday(year, 1, 1, 2));   // Coming of Age
+      set.add(fix(2,11));
+      set.add(fix(2,23));
+      set.add(fix(4,29));
+      set.add(fix(5,3));
+      set.add(fix(5,4));
+      set.add(fix(5,5));
+      set.add(fix(8,11));
+      set.add(fix(11,3));
+      set.add(fix(11,23));
+      break;
+    case 'SG':
+      set.add(fix(1,1));
+      set.add(fix(5,1));
+      set.add(fix(8,9));
+      set.add(fix(12,25));
+      break;
+    case 'IN':
+      set.add(fix(1,26));
+      set.add(fix(8,15));
+      set.add(fix(10,2));
+      set.add(fix(12,25));
+      break;
+    case 'MX':
+      set.add(fix(1,1));
+      set.add(kpiNthWeekday(year, 2, 1, 1));
+      set.add(kpiNthWeekday(year, 3, 1, 3));
+      set.add(fix(5,1));
+      set.add(fix(9,16));
+      set.add(kpiNthWeekday(year, 11, 1, 3));
+      set.add(fix(12,25));
+      break;
+    case 'BR':
+      set.add(fix(1,1));
+      set.add(fix(4,21));
+      set.add(fix(5,1));
+      set.add(goodFriday);
+      set.add(fix(9,7));
+      set.add(fix(10,12));
+      set.add(fix(11,2));
+      set.add(fix(11,15));
+      set.add(fix(12,25));
+      break;
+    case 'IT':
+      set.add(fix(1,1));
+      set.add(fix(1,6));
+      set.add(easterMon);
+      set.add(fix(4,25));
+      set.add(fix(5,1));
+      set.add(fix(6,2));
+      set.add(fix(8,15));
+      set.add(fix(11,1));
+      set.add(fix(12,8));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'PL':
+      set.add(fix(1,1));
+      set.add(fix(1,6));
+      set.add(easterSun);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(fix(5,3));
+      set.add(whitMonday);
+      set.add(fix(8,15));
+      set.add(fix(11,1));
+      set.add(fix(11,11));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'BE':
+      set.add(fix(1,1));
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(7,21));
+      set.add(fix(8,15));
+      set.add(fix(11,1));
+      set.add(fix(11,11));
+      set.add(fix(12,25));
+      break;
+    case 'CH':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(8,1));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'AT':
+      set.add(fix(1,1));
+      set.add(fix(1,6));
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(kpiYmdUTC(kpiAddDaysUTC(easter, 60))); // Corpus Christi
+      set.add(fix(8,15));
+      set.add(fix(10,26));
+      set.add(fix(11,1));
+      set.add(fix(12,8));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'PT':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterSun);
+      set.add(fix(4,25));
+      set.add(fix(5,1));
+      set.add(fix(6,10));
+      set.add(fix(8,15));
+      set.add(fix(10,5));
+      set.add(fix(11,1));
+      set.add(fix(12,1));
+      set.add(fix(12,8));
+      set.add(fix(12,25));
+      break;
+    case 'SE':
+      set.add(fix(1,1));
+      set.add(fix(1,6));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(ascension);
+      set.add(fix(6,6));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'DK':
+      set.add(fix(1,1));
+      set.add(kpiYmdUTC(kpiAddDaysUTC(easter, -3))); // Maundy Thursday
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(6,5));
+      set.add(fix(12,24));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'NO':
+      set.add(fix(1,1));
+      set.add(kpiYmdUTC(kpiAddDaysUTC(easter, -3))); // Maundy Thursday
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(fix(5,17));
+      set.add(ascension);
+      set.add(whitMonday);
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'NZ':
+      set.add(fix(1,1));
+      set.add(fix(1,2));
+      set.add(fix(2,6));                        // Waitangi
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(4,25));                       // ANZAC
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'HK':
+      set.add(fix(1,1));
+      set.add(goodFriday);
+      set.add(easterMon);
+      set.add(fix(5,1));
+      set.add(fix(7,1));
+      set.add(fix(10,1));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+    case 'AE':
+      set.add(fix(1,1));
+      set.add(fix(12,1));
+      set.add(fix(12,2));
+      set.add(fix(12,3));
+      break;
+    case 'ZA':
+      set.add(fix(1,1));
+      set.add(fix(3,21));
+      set.add(goodFriday);
+      set.add(kpiYmdUTC(kpiAddDaysUTC(easter, 1)));
+      set.add(fix(4,27));
+      set.add(fix(5,1));
+      set.add(fix(6,16));
+      set.add(fix(8,9));
+      set.add(fix(9,24));
+      set.add(fix(12,16));
+      set.add(fix(12,25));
+      set.add(fix(12,26));
+      break;
+  }
+  cache[key] = set;
+  return set;
+}
+
+// Map a warehouse name to ISO country code via fuzzy matching. Returns null
+// if no match found (caller falls back to weekend-only filtering).
+function kpiCountryFromWarehouse(name) {
+  if (!name) return null;
+  const cache = kpiCountryFromWarehouse._cache || (kpiCountryFromWarehouse._cache = {});
+  if (cache[name] !== undefined) return cache[name];
+  const n = name.toLowerCase();
+  // Order matters: more specific first. UK before "United States" so "Coventry UK" hits GB.
+  const rules = [
+    ['GB', /\b(uk|gb|united kingdom|great britain|england|scotland|wales|coventry|london|manchester|birmingham|leeds|glasgow|liverpool|edinburgh|bristol|sheffield|cardiff|belfast)\b/],
+    ['DE', /\b(de|germany|deutschland|berlin|munich|münchen|hamburg|frankfurt|cologne|köln|dusseldorf|düsseldorf|stuttgart|leipzig|dortmund|essen)\b/],
+    ['NL', /\b(nl|netherlands|holland|amsterdam|rotterdam|the hague|den haag|utrecht|eindhoven|groningen)\b/],
+    ['FR', /\b(fr|france|paris|marseille|lyon|toulouse|nice|nantes|bordeaux|lille|strasbourg)\b/],
+    ['ES', /\b(es|spain|españa|espana|madrid|barcelona|valencia|seville|sevilla|zaragoza|málaga|malaga|bilbao)\b/],
+    ['IT', /\b(it|italy|italia|rome|roma|milan|milano|naples|napoli|turin|torino|florence|firenze|venice|venezia|bologna)\b/],
+    ['IE', /\b(ie|ireland|dublin|cork|galway|limerick|waterford)\b/],
+    ['PL', /\b(pl|poland|polska|warsaw|warszawa|krakow|kraków|wroclaw|wrocław|gdansk|gdańsk|poznan|poznań)\b/],
+    ['BE', /\b(be|belgium|brussels|bruxelles|antwerp|antwerpen|ghent|gent|liege|liège)\b/],
+    ['CH', /\b(ch|switzerland|zurich|zürich|geneva|genève|basel|bern|lausanne)\b/],
+    ['AT', /\b(at|austria|österreich|oesterreich|vienna|wien|salzburg|graz|linz|innsbruck)\b/],
+    ['PT', /\b(pt|portugal|lisbon|lisboa|porto|braga|coimbra)\b/],
+    ['SE', /\b(se|sweden|sverige|stockholm|gothenburg|göteborg|malmö|malmo|uppsala)\b/],
+    ['DK', /\b(dk|denmark|danmark|copenhagen|københavn|aarhus|odense|aalborg)\b/],
+    ['NO', /\b(no|norway|norge|oslo|bergen|trondheim|stavanger)\b/],
+    ['CA', /\b(ca|canada|toronto|montreal|montréal|vancouver|calgary|ottawa|edmonton|winnipeg|québec|quebec)\b/],
+    ['AU', /\b(au|australia|sydney|melbourne|brisbane|perth|adelaide|canberra|hobart)\b/],
+    ['NZ', /\b(nz|new zealand|auckland|wellington|christchurch)\b/],
+    ['JP', /\b(jp|japan|tokyo|osaka|kyoto|nagoya|fukuoka|yokohama|sapporo|kobe)\b/],
+    ['SG', /\b(sg|singapore)\b/],
+    ['HK', /\b(hk|hong kong|kowloon)\b/],
+    ['IN', /\b(in|india|mumbai|delhi|bangalore|bengaluru|chennai|hyderabad|pune|kolkata|ahmedabad|gurgaon|gurugram|noida)\b/],
+    ['AE', /\b(ae|uae|dubai|abu dhabi|sharjah)\b/],
+    ['MX', /\b(mx|mexico|méxico|guadalajara|monterrey|tijuana|puebla|querétaro|queretaro)\b/],
+    ['BR', /\b(br|brazil|brasil|sao paulo|são paulo|rio de janeiro|belo horizonte|brasília|brasilia|salvador)\b/],
+    ['ZA', /\b(za|south africa|johannesburg|cape town|durban|pretoria)\b/],
+    // US matched LAST so US state codes (e.g. "ca" for California) don't override more-specific country matches.
+    ['US', /\b(us|usa|united states|america|new york|nyc|los angeles|chicago|houston|phoenix|philadelphia|dallas|austin|atlanta|seattle|miami|denver|boston|portland|slc|salt lake|kansas city|cleveland|detroit|nashville|charlotte|raleigh|tampa|orlando|minneapolis|st louis|cincinnati|pittsburgh|las vegas|memphis|baltimore|indianapolis|columbus|jacksonville|san francisco|san diego|san jose|sacramento|reno|tucson|albuquerque|oklahoma|nj|ny|tx|fl|ga|wa|or|az|nv|co|il|ma|md|va|nc|sc|tn|oh|mi|pa|wi|mn|mo|ks|ok|ar|al|ms|ut|id|mt|wy|nd|sd|ne|ia|hi|ak)\b/],
+  ];
+  let result = null;
+  for (const [code, regex] of rules) {
+    if (regex.test(n)) { result = code; break; }
+  }
+  cache[name] = result;
+  return result;
+}
+
+// Compute working-hours elapsed between two Date objects, treating each
+// working day (Mon–Fri, not in country holidays) as 24h available, and
+// weekends/holidays as 0h. Returns hours as a Number, or null if invalid.
+function kpiBusinessHoursBetween(start, end, country) {
+  if (!start || !end) return null;
+  if (!(start instanceof Date) || !(end instanceof Date)) return null;
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  if (end <= start) return 0;
+  let total = 0;
+  let cur = new Date(start.getTime());
+  const final = new Date(end.getTime());
+  // Safety cap: 5 years of iteration max, just in case of bad data.
+  let safety = 366 * 5;
+  while (cur < final && safety-- > 0) {
+    const dayEnd = new Date(Date.UTC(
+      cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate() + 1, 0, 0, 0, 0
+    ));
+    const segmentEnd = dayEnd < final ? dayEnd : final;
+    const wd = cur.getUTCDay();
+    const isWeekend = (wd === 0 || wd === 6);
+    let isHoliday = false;
+    if (!isWeekend && country) {
+      const holidays = kpiHolidaysFor(country, cur.getUTCFullYear());
+      isHoliday = holidays.has(kpiYmdUTC(cur));
+    }
+    if (!isWeekend && !isHoliday) {
+      total += (segmentEnd - cur) / 3600000;
+    }
+    cur = dayEnd;
+  }
+  return total;
+}
+
+// Convenience wrapper: compute business hours between two date-string fields
+// on a row, using the row's warehouse to pick the country.
+function kpiRowBusinessHours(row, startVal, endVal) {
+  const s = kpiParseDate(startVal);
+  const e = kpiParseDate(endVal);
+  if (!s || !e) return null;
+  const country = kpiCountryFromWarehouse(row && row.warehouse);
+  return kpiBusinessHoursBetween(s, e, country);
+}
 
 // Returns config object describing the currently selected KPI leg.
+// Hours are always BUSINESS hours (skipping weekends + region holidays).
 function kpiGetLegConfig() {
   const leg = (document.getElementById('kpiLeg') || {}).value || 'facility_completed';
   if (leg === 'shipped_facility') {
@@ -1651,14 +2095,17 @@ function kpiGetLegConfig() {
       endField:   'at_facility_at',
       label:      'Shipped → At facility',
       subLabel:   'shipped → at facility',
-      sloLabel:   `currently >${KPI_SLO_SHIPPED_HOURS}h in transit`,
+      sloLabel:   `currently >${KPI_SLO_SHIPPED_HOURS} business hours in transit`,
       hasData:    r => r.shipped_at && r.at_facility_at,
       isOpen:     r => r.shipped_at && !r.at_facility_at,
-      getHours:   r => {
-        const s = kpiParseDate(r.shipped_at), e = kpiParseDate(r.at_facility_at);
-        return (s && e) ? businessHours(s, e) : null;
-      },
+      getHours:   r => kpiRowBusinessHours(r, r.shipped_at, r.at_facility_at),
       sloMet:     (r, h) => h !== null ? (h <= KPI_SLO_SHIPPED_HOURS ? 'yes' : 'no') : null,
+      getOpenAgeHours: r => {
+        const s = kpiParseDate(r.shipped_at);
+        if (!s) return null;
+        const country = kpiCountryFromWarehouse(r && r.warehouse);
+        return kpiBusinessHoursBetween(s, new Date(), country);
+      },
     };
   }
   return {
@@ -1668,11 +2115,20 @@ function kpiGetLegConfig() {
     endField:   'completed_at',
     label:      'At facility → Completed',
     subLabel:   'at facility → completed',
-    sloLabel:   `currently >${KPI_SLO_HOURS}h at facility`,
+    sloLabel:   `currently >${KPI_SLO_HOURS} business hours at facility`,
     hasData:    r => r.at_facility_at && r.completed_at,
     isOpen:     r => r.at_facility_at && !r.completed_at,
-    getHours:   r => { const s = kpiParseDate(r.at_facility_at), e = kpiParseDate(r.completed_at); return (s && e) ? businessHours(s, e) : null; },
-    sloMet:     (r, h) => r.slo_met || null,
+    // Re-compute from raw timestamps so the result is holiday-aware. The
+    // sheet's pre-computed `hours_at_facility_to_completed` is calendar hours
+    // and is intentionally ignored.
+    getHours:   r => kpiRowBusinessHours(r, r.at_facility_at, r.completed_at),
+    sloMet:     (r, h) => h !== null ? (h <= KPI_SLO_HOURS ? 'yes' : 'no') : null,
+    getOpenAgeHours: r => {
+      const s = kpiParseDate(r.at_facility_at);
+      if (!s) return null;
+      const country = kpiCountryFromWarehouse(r && r.warehouse);
+      return kpiBusinessHoursBetween(s, new Date(), country);
+    },
   };
 }
 let kpiDashRows = [];
@@ -1719,28 +2175,6 @@ function kpiParseDate(v) {
   if (!v) return null;
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
-}
-
-// Count business hours (Mon–Fri only) between two Date objects.
-function businessHours(start, end) {
-  if (!start || !end || end <= start) return 0;
-  let total = 0;
-  let cur = new Date(start.getTime());
-  while (cur < end) {
-    const day = cur.getDay(); // 0=Sun, 6=Sat
-    if (day !== 0 && day !== 6) {
-      const nextMidnight = new Date(cur);
-      nextMidnight.setDate(nextMidnight.getDate() + 1);
-      nextMidnight.setHours(0, 0, 0, 0);
-      const segEnd = nextMidnight < end ? nextMidnight : end;
-      total += (segEnd - cur) / 3600000;
-    }
-    const nextDay = new Date(cur);
-    nextDay.setDate(nextDay.getDate() + 1);
-    nextDay.setHours(0, 0, 0, 0);
-    cur = nextDay;
-  }
-  return total;
 }
 
 function kpiPercentile(arr, p) {
@@ -1809,13 +2243,11 @@ function kpiRenderCards(rows) {
   const median = hours.length ? kpiPercentile(hours, 0.5) : null;
   const p90    = hours.length ? kpiPercentile(hours, 0.9) : null;
 
-  // Open breaches: start set, end empty, age > SLO
-  const now = Date.now();
+  // Open breaches: start set, end empty, business-hours age > SLO
   const breaches = rows.filter(r => {
     if (!cfg.isOpen(r)) return false;
-    const start = kpiParseDate(r[cfg.startField]);
-    if (!start) return false;
-    return businessHours(start, new Date(now)) > cfg.sloHours;
+    const age = cfg.getOpenAgeHours(r);
+    return age !== null && age > cfg.sloHours;
   });
 
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -1960,12 +2392,10 @@ function kpiRenderBreachTable(rows) {
     if (ths[4]) ths[4].textContent = cfg.leg === 'shipped_facility' ? 'Shipped' : 'At facility';
   }
 
-  const now = Date.now();
   const breaches = rows
     .filter(r => cfg.isOpen(r))
     .map(r => {
-      const start = kpiParseDate(r[cfg.startField]);
-      const hoursIn = start ? businessHours(start, new Date(now)) : null;
+      const hoursIn = cfg.getOpenAgeHours(r);
       return { ...r, _hoursIn: hoursIn, _overdue: hoursIn !== null ? hoursIn - cfg.sloHours : null };
     })
     .filter(r => r._overdue !== null && r._overdue > 0)
@@ -1995,7 +2425,6 @@ function kpiRenderWarehouseTable(rows) {
   const counter = document.getElementById('kpiWhCount');
   if (!tbody) return;
 
-  const now = Date.now();
   const cfg = kpiGetLegConfig();
   const byWh = {};
   rows.forEach(r => {
@@ -2008,8 +2437,8 @@ function kpiRenderWarehouseTable(rows) {
       byWh[wh].total++;
       if (cfg.sloMet(r, h) === 'yes') byWh[wh].met++;
     } else if (cfg.isOpen(r)) {
-      const start = kpiParseDate(r[cfg.startField]);
-      if (start && businessHours(start, new Date(now)) > cfg.sloHours) {
+      const age = cfg.getOpenAgeHours(r);
+      if (age !== null && age > cfg.sloHours) {
         byWh[wh].breaches++;
       }
     }
@@ -2063,17 +2492,11 @@ function kpiRenderPipeline() {
     const byWh = {};
     orders.forEach(o => {
       const w = (o.warehouse || '').replace('Warehouse - ', '') || '?';
-      if (!byWh[w]) byWh[w] = [];
-      byWh[w].push({ id: o.friendly_order_id || o.id || '—', org: o.organization || '—' });
+      byWh[w] = (byWh[w] || 0) + 1;
     });
     el.innerHTML = Object.entries(byWh)
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([w, items]) => {
-        const rows = items.map(it =>
-          `<div class="kpi-wh-tooltip-row"><span class="kpi-wh-tooltip-id">${escapeHTML(it.id)}</span><span class="kpi-wh-tooltip-org">${escapeHTML(it.org)}</span></div>`
-        ).join('');
-        return `<span class="kpi-pipeline-wh-chip">${escapeHTML(w)}: ${items.length}<div class="kpi-wh-tooltip"><div class="kpi-wh-tooltip-title">${escapeHTML(w)}</div>${rows}</div></span>`;
-      })
+      .sort((a, b) => b[1] - a[1])
+      .map(([w, n]) => `<span class="kpi-pipeline-wh-chip">${escapeHTML(w)}: ${n}</span>`)
       .join('');
   }
 
@@ -2093,11 +2516,29 @@ let invSortCol = 'created_date', invSortDir = -1;
 let invNewIds  = new Set();
 let invExpanded = new Set();
 
-// Block SLC warehouse — check both API format and CSV format
+// Block SLC, EU, and UK warehouses — check both API format and CSV format.
+// "Warehouse - UK" is blocked but "Warehouse - Coventry UK" is intentionally
+// kept (we match the UK name only as a complete token, not a substring).
 function isBlockedWarehouse(wh) {
   if (!wh) return false;
-  const n = wh.toLowerCase();
-  return n === 'slc' || n.includes('warehouse - slc') || n.includes('warehouse slc');
+  const n = wh.toLowerCase().trim();
+  // SLC
+  if (n === 'slc' || n.includes('warehouse - slc') || n.includes('warehouse slc')) return true;
+  // EU
+  if (n === 'eu' || n === 'warehouse - eu' || n === 'warehouse eu') return true;
+  // UK — exact match only, so "warehouse - coventry uk" is NOT blocked
+  if (n === 'uk' || n === 'warehouse - uk' || n === 'warehouse uk') return true;
+  return false;
+}
+
+// Block customers — partial (substring) match, case-insensitive.
+// Currently: "Stark Industries" and anything containing "demo".
+function isBlockedCustomer(cust) {
+  if (!cust) return false;
+  const n = cust.toLowerCase().trim();
+  if (n.includes('stark industries')) return true;
+  if (n.includes('demo')) return true;
+  return false;
 }
 
 function invLoadState()  { try { const s=localStorage.getItem('inbound_tracker_inv_v2'); if(s) invOrders=JSON.parse(s).orders||{}; } catch(e){} }
@@ -2207,8 +2648,10 @@ async function invFetchFromAPI() {
     allOrders.forEach(order => {
       const fid = order.friendlyOrderId || order.id;
       const wh = order.warehouse?.name || '';
+      const orgName = order.organization?.name || '';
 
       if (isBlockedWarehouse(wh)) return;
+      if (isBlockedCustomer(orgName)) return;
 
       // Track org name → id for the live-inventory tab picker
       if (order.organization?.name && order.organization?.id) {
@@ -2670,7 +3113,9 @@ async function csFetchFromAPI() {
     allOrders.forEach(order => {
       const fid = order.id;
       const wh = order.warehouse?.name || '';
+      const orgName = order.organization?.name || '';
       if (isBlockedWarehouse(wh)) return;
+      if (isBlockedCustomer(orgName)) return;
 
       // Track org name → id for the live-inventory tab picker
       if (order.organization?.name && order.organization?.id) {
@@ -4411,8 +4856,11 @@ async function liveInvFetch() {
       pageNumber++;
     }
 
-    // Filter out Warehouse SLC rows (reuses existing helper)
-    const filtered = all.filter(row => !isBlockedWarehouse(row.warehouse?.name));
+    // Filter out blocked warehouses and customers (reuses existing helpers)
+    const filtered = all.filter(row =>
+      !isBlockedWarehouse(row.warehouse?.name) &&
+      !isBlockedCustomer(row.organization?.name)
+    );
 
     liveInvData = filtered;
     liveInvLoaded = true;
