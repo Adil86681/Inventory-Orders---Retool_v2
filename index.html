@@ -1433,11 +1433,20 @@ function kpiProcessOrders(allOrders) {
     }
 
     if (isFirstSight) {
-      // Order is being observed mid-lifecycle. We don't know when prior
-      // transitions happened, so silently mark them "passed" without emitting
-      // events. This keeps KPI data clean — only orders we observe end-to-end
-      // contribute to the SLO calculation. Older orders get partial data.
-      if (orderStatus === 'SHIPPED') prev.hasShipped = true;
+      // Order observed mid-lifecycle for the first time. The API gives us
+      // order.updatedAt — for SHIPPED orders that's effectively the ship time,
+      // so we backfill shipped_at from it. Item-level transitions don't expose
+      // an equivalent timestamp on the API, so at_facility is still marked
+      // "passed" silently to avoid stamping it with the wrong moment.
+      if (orderStatus === 'SHIPPED' && !prev.hasShipped) {
+        events.push({
+          friendly_order_id: fid,
+          transition: 'shipped',
+          timestamp: order.updatedAt || new Date().toISOString(),
+          ...meta
+        });
+        prev.hasShipped = true;
+      }
       if (itemStatuses.includes('ARRIVED_AT_PROCESSING_FACILITY')) prev.hasAtFacility = true;
     } else {
       // shipped — witnessed status flip
@@ -1445,7 +1454,7 @@ function kpiProcessOrders(allOrders) {
         events.push({
           friendly_order_id: fid,
           transition: 'shipped',
-          timestamp: new Date().toISOString(),
+          timestamp: order.updatedAt || new Date().toISOString(),
           ...meta
         });
         prev.hasShipped = true;
