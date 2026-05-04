@@ -1187,7 +1187,7 @@
 
   <div class="kpi-cards">
     <div class="kpi-card" id="kpiCard-slo">
-      <div class="kpi-card-label">% SLO Met</div>
+      <div class="kpi-card-label" id="kpiLbl-slo">% SLO Met</div>
       <div class="kpi-card-value" id="kpiVal-slo">—</div>
       <div class="kpi-card-sub" id="kpiSub-slo">no data</div>
     </div>
@@ -1202,12 +1202,12 @@
       <div class="kpi-card-sub">at facility &rarr; completed</div>
     </div>
     <div class="kpi-card red" id="kpiCard-breach">
-      <div class="kpi-card-label">Open Breaches</div>
+      <div class="kpi-card-label" id="kpiLbl-breach">Open Breaches</div>
       <div class="kpi-card-value" id="kpiVal-breach">—</div>
-      <div class="kpi-card-sub">currently &gt; 48h at facility</div>
+      <div class="kpi-card-sub" id="kpiSub-breach">currently &gt; 48h at facility</div>
     </div>
     <div class="kpi-card" id="kpiCard-total">
-      <div class="kpi-card-label">Completed (window)</div>
+      <div class="kpi-card-label" id="kpiLbl-total">Completed (window)</div>
       <div class="kpi-card-value" id="kpiVal-total">—</div>
       <div class="kpi-card-sub" id="kpiSub-total">orders</div>
     </div>
@@ -1228,15 +1228,15 @@
       <div class="kpi-chart-canvas-wrap"><canvas id="kpiTrendChart"></canvas></div>
     </div>
     <div class="kpi-chart-card">
-      <div class="kpi-chart-title">Cycle time distribution</div>
-      <div class="kpi-chart-subtitle">Hours from at facility &rarr; completed</div>
+      <div class="kpi-chart-title" id="kpiHistTitle">Cycle time distribution</div>
+      <div class="kpi-chart-subtitle" id="kpiHistSubtitle">Hours from at facility &rarr; completed</div>
       <div class="kpi-chart-canvas-wrap"><canvas id="kpiHistChart"></canvas></div>
     </div>
   </div>
 
   <div class="kpi-table-wrap">
     <div class="kpi-table-header">
-      <div class="kpi-table-title">Open SLO breaches</div>
+      <div class="kpi-table-title" id="kpiBreachTitle">Open SLO breaches</div>
       <div class="kpi-table-count" id="kpiBreachCount">0 orders</div>
     </div>
     <div style="overflow-x:auto">
@@ -1636,36 +1636,49 @@ function kpiGetLegConfig() {
   if (leg === 'shipped_facility') {
     return {
       leg,
-      sloHours:   KPI_SLO_SHIPPED_HOURS,
+      hasSlo:     false,                  // tracker-only — no SLO target
+      sloHours:   null,
+      // Tracker-mode flag for "stuck" shipments. Calendar hours (carrier
+      // doesn't pause for weekends), threshold = 7 days.
+      stuckHours: 168,
+      stuckMode:  'calendar',
+      stuckLabel: 'stuck >7 days',
       startField: 'shipped_at',
       endField:   'at_facility_at',
       label:      'Shipped → At facility',
       subLabel:   'shipped → at facility',
-      sloLabel:   `currently >${KPI_SLO_SHIPPED_HOURS}h in transit`,
+      sloLabel:   '',
+      // Carriers operate weekends, so transit time is calendar, not business.
+      hourMode:   'calendar',
       hasData:    r => r.shipped_at && r.at_facility_at,
       isOpen:     r => r.shipped_at && !r.at_facility_at,
       getHours:   r => {
         const s = kpiParseDate(r.shipped_at), e = kpiParseDate(r.at_facility_at);
-        return (s && e) ? kpiBusinessHoursBetween(s.getTime(), e.getTime()) : null;
+        return (s && e) ? kpiHoursBetween(s.getTime(), e.getTime(), 'calendar') : null;
       },
-      sloMet:     (r, h) => h !== null ? (h <= KPI_SLO_SHIPPED_HOURS ? 'yes' : 'no') : null,
+      sloMet:     () => null,             // never evaluated in tracker mode
     };
   }
   return {
     leg,
+    hasSlo:     true,
     sloHours:   KPI_SLO_HOURS,
+    stuckHours: KPI_SLO_HOURS,
+    stuckMode:  'business',
+    stuckLabel: `currently >${KPI_SLO_HOURS}h at facility`,
     startField: 'at_facility_at',
     endField:   'completed_at',
     label:      'At facility → Completed',
     subLabel:   'at facility → completed',
     sloLabel:   `currently >${KPI_SLO_HOURS}h at facility`,
+    hourMode:   'business',
     hasData:    r => r.at_facility_at && r.completed_at,
     isOpen:     r => r.at_facility_at && !r.completed_at,
     getHours:   r => {
       const s = kpiParseDate(r.at_facility_at), e = kpiParseDate(r.completed_at);
       return (s && e) ? kpiBusinessHoursBetween(s.getTime(), e.getTime()) : null;
     },
-    sloMet:     (r, h) => r.slo_met || null,
+    sloMet:     (r, h) => h !== null ? (h <= KPI_SLO_HOURS ? 'yes' : 'no') : null,
   };
 }
 let kpiDashRows = [];
@@ -1712,6 +1725,15 @@ function kpiParseDate(v) {
   if (!v) return null;
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
+}
+// Hours between two timestamps in either calendar or business mode. Calendar
+// mode is straight subtraction; business mode delegates to the weekend-skipping
+// helper below. Used by the leg-aware "stuck" calculations so a 7-day calendar
+// window can coexist with a 48-business-hour SLO.
+function kpiHoursBetween(startMs, endMs, mode) {
+  if (!startMs || !endMs || endMs <= startMs) return 0;
+  if (mode === 'calendar') return (endMs - startMs) / 3600000;
+  return kpiBusinessHoursBetween(startMs, endMs);
 }
 // Hours between two timestamps, excluding Saturdays and Sundays. Used so the
 // SLO clock doesn't tick over the weekend when warehouses don't operate.
@@ -1819,56 +1841,70 @@ function kpiDashRender() {
 
 function kpiRenderCards(rows) {
   const cfg = kpiGetLegConfig();
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
   const completed = rows.filter(r => cfg.hasData(r));
   const hours = completed.map(r => cfg.getHours(r)).filter(n => n !== null && !isNaN(n));
 
-  const sloEvalRows = completed.filter(r => {
-    const h = cfg.getHours(r);
-    const sm = cfg.sloMet(r, h);
-    return sm === 'yes' || sm === 'no';
-  });
-  const sloMetCount = sloEvalRows.filter(r => cfg.sloMet(r, cfg.getHours(r)) === 'yes').length;
-  const sloEval = sloEvalRows.length;
-  const sloPct = sloEval > 0 ? Math.round((sloMetCount / sloEval) * 100) : null;
-
   const median = hours.length ? kpiPercentile(hours, 0.5) : null;
   const p90    = hours.length ? kpiPercentile(hours, 0.9) : null;
 
-  // Open breaches: start set, end empty, age > SLO
+  // "Stuck" detection — flags open shipments that have been in this leg longer
+  // than cfg.stuckHours, using the leg's stuckMode (calendar vs business).
   const now = Date.now();
-  const breaches = rows.filter(r => {
+  const stuck = rows.filter(r => {
     if (!cfg.isOpen(r)) return false;
     const start = kpiParseDate(r[cfg.startField]);
     if (!start) return false;
-    return kpiBusinessHoursBetween(start.getTime(), now) > cfg.sloHours;
+    return kpiHoursBetween(start.getTime(), now, cfg.stuckMode) > cfg.stuckHours;
   });
 
-  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setText('kpiVal-slo',    sloPct === null ? '—' : sloPct + '%');
-  setText('kpiSub-slo',    sloEval === 0 ? 'no data' : `${sloMetCount} of ${sloEval} orders`);
+  // Median / P90 / total — same shape on both legs
   setText('kpiVal-median', median === null ? '—' : median.toFixed(1) + 'h');
   setText('kpiVal-p90',    p90    === null ? '—' : p90.toFixed(1)    + 'h');
-  setText('kpiVal-breach', breaches.length);
   setText('kpiVal-total',  completed.length);
-  setText('kpiSub-total',  hours.length ? `${hours.length} with cycle time` : 'orders');
-
-  // Update dynamic "leg" subtitles on median/p90 cards
+  setText('kpiSub-total',  hours.length ? `${hours.length} with transit time` : 'orders');
   document.querySelectorAll('#kpiCard-median .kpi-card-sub, #kpiCard-p90 .kpi-card-sub').forEach(el => {
     el.textContent = cfg.subLabel;
   });
-  const breachSub = document.querySelector('#kpiCard-breach .kpi-card-sub');
-  if (breachSub) breachSub.textContent = cfg.sloLabel;
 
-  // Color the SLO card based on threshold
+  // Stuck/breach card — relabel per leg
+  setText('kpiVal-breach', stuck.length);
+  setText('kpiLbl-breach', cfg.hasSlo ? 'Open Breaches' : 'Stuck >7 days');
+  setText('kpiSub-breach', cfg.hasSlo ? cfg.sloLabel : 'open >7 calendar days — investigate');
+  setText('kpiLbl-total',  cfg.hasSlo ? 'Completed (window)' : 'Received (window)');
+
+  // SLO card — only meaningful on the SLO leg. On the tracker leg, swap it
+  // for an "Open in transit" count so the slot still surfaces useful info.
   const sloCard = document.getElementById('kpiCard-slo');
-  if (sloCard) {
-    sloCard.classList.remove('green', 'amber', 'red');
-    if (sloPct !== null) {
-      if (sloPct >= 90)      sloCard.classList.add('green');
-      else if (sloPct >= 75) sloCard.classList.add('amber');
-      else                   sloCard.classList.add('red');
+  if (cfg.hasSlo) {
+    const sloEvalRows = completed.filter(r => {
+      const h = cfg.getHours(r);
+      const sm = cfg.sloMet(r, h);
+      return sm === 'yes' || sm === 'no';
+    });
+    const sloMetCount = sloEvalRows.filter(r => cfg.sloMet(r, cfg.getHours(r)) === 'yes').length;
+    const sloEval = sloEvalRows.length;
+    const sloPct = sloEval > 0 ? Math.round((sloMetCount / sloEval) * 100) : null;
+
+    setText('kpiLbl-slo', '% SLO Met');
+    setText('kpiVal-slo', sloPct === null ? '—' : sloPct + '%');
+    setText('kpiSub-slo', sloEval === 0 ? 'no data' : `${sloMetCount} of ${sloEval} orders`);
+
+    if (sloCard) {
+      sloCard.classList.remove('green', 'amber', 'red');
+      if (sloPct !== null) {
+        if (sloPct >= 90)      sloCard.classList.add('green');
+        else if (sloPct >= 75) sloCard.classList.add('amber');
+        else                   sloCard.classList.add('red');
+      }
     }
+  } else {
+    const openCount = rows.filter(r => cfg.isOpen(r)).length;
+    setText('kpiLbl-slo', 'Open in transit');
+    setText('kpiVal-slo', openCount);
+    setText('kpiSub-slo', openCount === 0 ? 'no shipments in flight' : 'shipments en route to facility');
+    if (sloCard) sloCard.classList.remove('green', 'amber', 'red');
   }
 }
 
@@ -1880,16 +1916,25 @@ function kpiRenderTrendChart(rows) {
   const granularity = (document.getElementById('kpiTrendGranularity') || {}).value || 'week';
   const isMonth = granularity === 'month';
 
-  // Update card title/subtitle to reflect granularity
+  const cfg = kpiGetLegConfig();
+
+  // Update card title/subtitle to reflect granularity AND leg type
   const titleEl = document.getElementById('kpiTrendTitle');
   const subEl   = document.getElementById('kpiTrendSubtitle');
   if (titleEl) titleEl.textContent = isMonth ? 'Monthly trend' : 'Weekly trend';
-  if (subEl)   subEl.textContent   = isMonth
-    ? 'Shipments received per month, split by in-SLO vs out-of-SLO'
-    : 'Shipments received per week, split by in-SLO vs out-of-SLO';
+  if (subEl) {
+    if (cfg.hasSlo) {
+      subEl.textContent = isMonth
+        ? 'Shipments received per month, split by in-SLO vs out-of-SLO'
+        : 'Shipments received per week, split by in-SLO vs out-of-SLO';
+    } else {
+      subEl.textContent = isMonth
+        ? 'Shipments arrived at facility per month'
+        : 'Shipments arrived at facility per week';
+    }
+  }
 
-  // Group received orders by bucket key, split into in-SLO and out-of-SLO buckets.
-  const cfg = kpiGetLegConfig();
+  // Group received orders by bucket. SLO leg splits in/out; tracker leg is total only.
   const byBucket = {};
   rows.forEach(r => {
     if (!cfg.hasData(r)) return;
@@ -1897,35 +1942,40 @@ function kpiRenderTrendChart(rows) {
     const h = cfg.getHours(r);
     if (!endDate || h === null || isNaN(h)) return;
     const bucket = isMonth ? kpiMonthKey(endDate) : kpiIsoWeekKey(endDate);
-    if (!byBucket[bucket]) byBucket[bucket] = { inSlo: 0, outSlo: 0 };
-    if (cfg.sloMet(r, h) === 'yes') byBucket[bucket].inSlo++;
-    else byBucket[bucket].outSlo++;
+    if (!byBucket[bucket]) byBucket[bucket] = { inSlo: 0, outSlo: 0, total: 0 };
+    byBucket[bucket].total++;
+    if (cfg.hasSlo && cfg.sloMet(r, h) === 'yes') byBucket[bucket].inSlo++;
+    else if (cfg.hasSlo) byBucket[bucket].outSlo++;
   });
 
-  const keys         = Object.keys(byBucket).sort();
-  const labels       = keys.map(k => kpiFormatBucketLabel(k, granularity));
-  const inSloCounts  = keys.map(k => byBucket[k].inSlo);
-  const outSloCounts = keys.map(k => byBucket[k].outSlo);
+  const keys   = Object.keys(byBucket).sort();
+  const labels = keys.map(k => kpiFormatBucketLabel(k, granularity));
+
+  let datasets;
+  if (cfg.hasSlo) {
+    datasets = [
+      { label: 'In SLO',     data: keys.map(k => byBucket[k].inSlo),  backgroundColor: 'rgba(22,163,74,0.85)', borderColor: '#16a34a', borderWidth: 1, stack: 'total' },
+      { label: 'Out of SLO', data: keys.map(k => byBucket[k].outSlo), backgroundColor: 'rgba(220,38,38,0.85)', borderColor: '#dc2626', borderWidth: 1, stack: 'total' }
+    ];
+  } else {
+    datasets = [
+      { label: 'Shipments received', data: keys.map(k => byBucket[k].total), backgroundColor: 'rgba(61,111,255,0.85)', borderColor: '#3d6fff', borderWidth: 1 }
+    ];
+  }
 
   if (kpiTrendChartObj) kpiTrendChartObj.destroy();
   kpiTrendChartObj = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [
-        { label: 'In SLO',     data: inSloCounts,  backgroundColor: 'rgba(22,163,74,0.85)',  borderColor: '#16a34a', borderWidth: 1, stack: 'total' },
-        { label: 'Out of SLO', data: outSloCounts, backgroundColor: 'rgba(220,38,38,0.85)',  borderColor: '#dc2626', borderWidth: 1, stack: 'total' }
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { stacked: true, title: { display: true, text: isMonth ? 'Month' : 'Week' }, ticks: { font: { size: 11 } } },
-        y: { stacked: true, title: { display: true, text: 'Shipments received' }, ticks: { precision: 0 }, beginAtZero: true }
+        x: { stacked: cfg.hasSlo, title: { display: true, text: isMonth ? 'Month' : 'Week' }, ticks: { font: { size: 11 } } },
+        y: { stacked: cfg.hasSlo, title: { display: true, text: 'Shipments received' }, ticks: { precision: 0 }, beginAtZero: true }
       },
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        legend: { position: 'bottom', display: cfg.hasSlo, labels: { boxWidth: 12, font: { size: 11 } } },
         tooltip: {
           mode: 'index',
           callbacks: {
@@ -1936,6 +1986,7 @@ function kpiRenderTrendChart(rows) {
             },
             label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
             footer: (items) => {
+              if (!cfg.hasSlo) return '';
               const total = items.reduce((sum, i) => sum + (i.parsed.y || 0), 0);
               const inSlo = items.find(i => i.dataset.label === 'In SLO');
               const pct = total > 0 && inSlo ? Math.round((inSlo.parsed.y / total) * 100) : 0;
@@ -1953,22 +2004,48 @@ function kpiRenderHistogram(rows) {
   if (!ctx || typeof Chart === 'undefined') return;
 
   const cfg = kpiGetLegConfig();
+
+  // Update card title/subtitle based on leg
+  const titleEl = document.getElementById('kpiHistTitle');
+  const subEl   = document.getElementById('kpiHistSubtitle');
+  if (titleEl) titleEl.textContent = cfg.hasSlo ? 'Cycle time distribution' : 'Transit time distribution';
+  if (subEl)   subEl.textContent   = cfg.hasSlo
+    ? 'Business hours from at facility → completed'
+    : 'Calendar days from shipped → at facility';
+
   const hours = rows
     .filter(r => cfg.hasData(r))
     .map(r => cfg.getHours(r))
     .filter(n => n !== null && !isNaN(n));
 
-  // Buckets: 0-12, 12-24, 24-36, 36-48, 48-72, 72-120, 120+
-  const buckets = [
-    { label: '0-12h',   min: 0,   max: 12,    color: '#16a34a' },
-    { label: '12-24h',  min: 12,  max: 24,    color: '#16a34a' },
-    { label: '24-36h',  min: 24,  max: 36,    color: '#16a34a' },
-    { label: '36-48h',  min: 36,  max: 48,    color: '#16a34a' },
-    { label: '48-72h',  min: 48,  max: 72,    color: '#dc2626' },
-    { label: '72-120h', min: 72,  max: 120,   color: '#dc2626' },
-    { label: '120h+',   min: 120, max: Infinity, color: '#dc2626' }
-  ];
+  // SLO leg uses hour buckets coloured by SLO threshold. Tracker leg uses
+  // day buckets in a single neutral colour (no SLO concept).
+  let buckets;
+  if (cfg.hasSlo) {
+    buckets = [
+      { label: '0-12h',   min: 0,   max: 12,    color: '#16a34a' },
+      { label: '12-24h',  min: 12,  max: 24,    color: '#16a34a' },
+      { label: '24-36h',  min: 24,  max: 36,    color: '#16a34a' },
+      { label: '36-48h',  min: 36,  max: 48,    color: '#16a34a' },
+      { label: '48-72h',  min: 48,  max: 72,    color: '#dc2626' },
+      { label: '72-120h', min: 72,  max: 120,   color: '#dc2626' },
+      { label: '120h+',   min: 120, max: Infinity, color: '#dc2626' }
+    ];
+  } else {
+    // Tracker buckets in days (carrier transit usually multi-day)
+    const NEUTRAL = '#3d6fff';
+    const STALE   = '#dc2626';
+    buckets = [
+      { label: '<1d',  min: 0,            max: 24,            color: NEUTRAL },
+      { label: '1-2d', min: 24,           max: 48,            color: NEUTRAL },
+      { label: '2-3d', min: 48,           max: 72,            color: NEUTRAL },
+      { label: '3-5d', min: 72,           max: 120,           color: NEUTRAL },
+      { label: '5-7d', min: 120,          max: 168,           color: NEUTRAL },
+      { label: '7d+',  min: 168,          max: Infinity,      color: STALE }
+    ];
+  }
   const counts = buckets.map(b => hours.filter(h => h >= b.min && h < b.max).length);
+  const xUnit  = cfg.hourMode === 'calendar' ? 'Calendar hours' : 'Business hours';
 
   if (kpiHistChartObj) kpiHistChartObj.destroy();
   kpiHistChartObj = new Chart(ctx, {
@@ -1987,7 +2064,7 @@ function kpiRenderHistogram(rows) {
       plugins: { legend: { display: false } },
       scales: {
         y: { title: { display: true, text: 'Orders' }, ticks: { precision: 0 } },
-        x: { title: { display: true, text: `Business hours (${kpiGetLegConfig().subLabel})` } }
+        x: { title: { display: true, text: `${xUnit} (${cfg.subLabel})` } }
       }
     }
   });
@@ -1996,44 +2073,56 @@ function kpiRenderHistogram(rows) {
 function kpiRenderBreachTable(rows) {
   const tbody = document.querySelector('#kpiBreachTable tbody');
   const counter = document.getElementById('kpiBreachCount');
+  const titleEl = document.getElementById('kpiBreachTitle');
   const thead = document.querySelector('#kpiBreachTable thead tr');
   if (!tbody) return;
   const cfg = kpiGetLegConfig();
 
-  // Update column header to match the current leg
+  // Title + last column relabel based on leg
+  if (titleEl) titleEl.textContent = cfg.hasSlo ? 'Open SLO breaches' : 'Stuck shipments (>7 days)';
   if (thead) {
     const ths = thead.querySelectorAll('th');
     if (ths[4]) ths[4].textContent = cfg.leg === 'shipped_facility' ? 'Shipped' : 'At facility';
+    if (ths[5]) ths[5].textContent = cfg.hasSlo ? 'Hours overdue' : 'Days in transit';
   }
 
   const now = Date.now();
-  const breaches = rows
+  const flagged = rows
     .filter(r => cfg.isOpen(r))
     .map(r => {
       const start = kpiParseDate(r[cfg.startField]);
-      const hoursIn = start ? kpiBusinessHoursBetween(start.getTime(), now) : null;
-      return { ...r, _hoursIn: hoursIn, _overdue: hoursIn !== null ? hoursIn - cfg.sloHours : null };
+      const hoursIn = start ? kpiHoursBetween(start.getTime(), now, cfg.stuckMode) : null;
+      const overBy = hoursIn !== null ? hoursIn - cfg.stuckHours : null;
+      return { ...r, _hoursIn: hoursIn, _overBy: overBy };
     })
-    .filter(r => r._overdue !== null && r._overdue > 0)
-    .sort((a, b) => b._overdue - a._overdue);
+    .filter(r => r._overBy !== null && r._overBy > 0)
+    .sort((a, b) => b._overBy - a._overBy);
 
-  if (counter) counter.textContent = `${breaches.length} order${breaches.length === 1 ? '' : 's'}`;
+  if (counter) counter.textContent = `${flagged.length} order${flagged.length === 1 ? '' : 's'}`;
 
-  if (breaches.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="kpi-empty">No open breaches — everything within SLO.</td></tr>';
+  if (flagged.length === 0) {
+    const msg = cfg.hasSlo
+      ? 'No open breaches — everything within SLO.'
+      : 'No shipments stuck >7 days.';
+    tbody.innerHTML = `<tr><td colspan="6" class="kpi-empty">${msg}</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = breaches.map(r => `
+  tbody.innerHTML = flagged.map(r => {
+    const lastCol = cfg.hasSlo
+      ? `+${r._overBy.toFixed(1)}h`
+      : `${(r._hoursIn / 24).toFixed(1)}d`;
+    return `
     <tr>
       <td class="mono">${escapeHTML(r.friendly_order_id || '')}</td>
       <td>${escapeHTML(r.organization || '')}</td>
       <td>${escapeHTML((r.warehouse || '').replace('Warehouse - ', ''))}</td>
       <td>${escapeHTML(r.product_title || '')}</td>
       <td class="mono">${escapeHTML(String(r[cfg.startField] || '').substring(0, 16).replace('T', ' '))}</td>
-      <td class="num kpi-breach-age">+${r._overdue.toFixed(1)}h</td>
+      <td class="num kpi-breach-age">${lastCol}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function kpiRenderWarehouseTable(rows) {
@@ -2043,20 +2132,30 @@ function kpiRenderWarehouseTable(rows) {
 
   const now = Date.now();
   const cfg = kpiGetLegConfig();
+
+  // Dynamic header relabel — SLO column hidden as "—" on tracker leg, breach
+  // column reads "Stuck >7d" instead of "Open breaches".
+  const thead = document.querySelector('#kpiWhTable thead tr');
+  if (thead) {
+    const ths = thead.querySelectorAll('th');
+    if (ths[2]) ths[2].textContent = cfg.hasSlo ? '% SLO Met' : '—';
+    if (ths[5]) ths[5].textContent = cfg.hasSlo ? 'Open breaches' : 'Stuck >7d';
+  }
+
   const byWh = {};
   rows.forEach(r => {
     const wh = r.warehouse || '(unknown)';
-    if (!byWh[wh]) byWh[wh] = { hours: [], met: 0, total: 0, breaches: 0 };
+    if (!byWh[wh]) byWh[wh] = { hours: [], met: 0, total: 0, flagged: 0 };
 
     if (cfg.hasData(r)) {
       const h = cfg.getHours(r);
       if (h !== null && !isNaN(h)) byWh[wh].hours.push(h);
       byWh[wh].total++;
-      if (cfg.sloMet(r, h) === 'yes') byWh[wh].met++;
+      if (cfg.hasSlo && cfg.sloMet(r, h) === 'yes') byWh[wh].met++;
     } else if (cfg.isOpen(r)) {
       const start = kpiParseDate(r[cfg.startField]);
-      if (start && kpiBusinessHoursBetween(start.getTime(), now) > cfg.sloHours) {
-        byWh[wh].breaches++;
+      if (start && kpiHoursBetween(start.getTime(), now, cfg.stuckMode) > cfg.stuckHours) {
+        byWh[wh].flagged++;
       }
     }
   });
@@ -2071,17 +2170,18 @@ function kpiRenderWarehouseTable(rows) {
 
   tbody.innerHTML = whList.map(wh => {
     const d = byWh[wh];
-    const sloPct = d.total > 0 ? Math.round((d.met / d.total) * 100) : null;
+    const sloPct = (cfg.hasSlo && d.total > 0) ? Math.round((d.met / d.total) * 100) : null;
     const median = d.hours.length ? kpiPercentile(d.hours, 0.5) : null;
     const p90    = d.hours.length ? kpiPercentile(d.hours, 0.9) : null;
+    const sloCell = cfg.hasSlo ? (sloPct === null ? '—' : sloPct + '%') : '—';
     return `
       <tr>
         <td>${escapeHTML(wh.replace('Warehouse - ', ''))}</td>
         <td class="num">${d.total}</td>
-        <td class="num">${sloPct === null ? '—' : sloPct + '%'}</td>
+        <td class="num">${sloCell}</td>
         <td class="num">${median === null ? '—' : median.toFixed(1)}</td>
         <td class="num">${p90    === null ? '—' : p90.toFixed(1)}</td>
-        <td class="num" style="color:${d.breaches > 0 ? 'var(--red)' : 'var(--text2)'}">${d.breaches}</td>
+        <td class="num" style="color:${d.flagged > 0 ? 'var(--red)' : 'var(--text2)'}">${d.flagged}</td>
       </tr>`;
   }).join('');
 }
