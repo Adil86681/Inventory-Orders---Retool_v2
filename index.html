@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inbound Order Tracker — Live</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 <style>
   :root {
     --bg:       #f0f2f5;
@@ -4990,10 +4989,7 @@ function productsCopyFallback(text) {
 }
 
 // ─── KEYDELIVERY HELPERS (defined early so render functions can call kdBtn) ──
-const _KD_KEY    = 'd2ae5b5eb9914504a342057bcdd186ab';
-const _KD_SECRET = 'siViizEUyGqP3262';
-const _KD_TRACK  = 'https://www.kd100.com/api/v1/tracking/realtime';
-const _KD_DETECT = 'https://www.kd100.com/api/v1/carriers/detect';
+// Credentials live in the Vercel serverless function (api/track.js) — not here.
 
 function kdBtn(code) {
   if (!code) return '';
@@ -5001,16 +4997,11 @@ function kdBtn(code) {
   return '<button class="btn-kd-track" onclick="event.stopPropagation();kdTrack(\'' + safe + '\',this)" title="Live track">&#128205;</button>';
 }
 
-function _kdSign(s) {
-  return CryptoJS.MD5(s + _KD_KEY + _KD_SECRET).toString().toUpperCase();
-}
-
-async function _kdPost(url, body) {
-  const s = JSON.stringify(body);
-  const r = await fetch(url, {
+async function _kdPost(action, params) {
+  const r = await fetch('/api/track', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'API-Key': _KD_KEY, 'signature': _kdSign(s) },
-    body: s
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params })
   });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
@@ -5045,11 +5036,11 @@ async function kdTrack(trackingCode, btnEl) {
   overlay.classList.add('open');
   if (btnEl) { btnEl.classList.add('loading'); btnEl.textContent = '…'; }
   try {
-    const det = await _kdPost(_KD_DETECT, { tracking_number: trackingCode });
+    const det = await _kdPost('detect', { tracking_number: trackingCode });
     if (!det.data || !det.data.length) throw new Error('Carrier not detected');
     const { carrier_id, carrier_name } = det.data[0];
     body.innerHTML = '<div class="kd-spinner"><div class="kd-spin"></div>Fetching from ' + carrier_name + '…</div>';
-    const res = await _kdPost(_KD_TRACK, { carrier_id, tracking_number: trackingCode, area_show:1, order:'desc' });
+    const res = await _kdPost('track', { carrier_id, tracking_number: trackingCode, area_show:1, order:'desc' });
     if (res.code !== 200 || !res.data) throw new Error(res.message || 'Error ' + res.code);
     const d = res.data;
     const st = _KD_STATUS[d.order_status_code] || {label:'Unknown',cls:'kd-b0'};
