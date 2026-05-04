@@ -1215,8 +1215,16 @@
 
   <div class="kpi-charts">
     <div class="kpi-chart-card">
-      <div class="kpi-chart-title">Weekly trend</div>
-      <div class="kpi-chart-subtitle">Shipments received per week, split by in-SLO vs out-of-SLO</div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
+        <div>
+          <div class="kpi-chart-title" id="kpiTrendTitle">Weekly trend</div>
+          <div class="kpi-chart-subtitle" id="kpiTrendSubtitle">Shipments received per week, split by in-SLO vs out-of-SLO</div>
+        </div>
+        <select id="kpiTrendGranularity" onchange="kpiDashRender()" style="align-self:center;">
+          <option value="week" selected>Weekly</option>
+          <option value="month">Monthly</option>
+        </select>
+      </div>
       <div class="kpi-chart-canvas-wrap"><canvas id="kpiTrendChart"></canvas></div>
     </div>
     <div class="kpi-chart-card">
@@ -1737,6 +1745,40 @@ function kpiIsoWeekKey(d) {
   const week = 1 + Math.round((diff - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
   return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
+function kpiMonthKey(d) {
+  // Returns "YYYY-MM" — calendar month bucket.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+// Convert an ISO week key like "2026-W18" back to the Mon..Sun date range it
+// represents. Returns { start: Date, end: Date }.
+function kpiWeekRangeFromKey(key) {
+  const [yearStr, weekStr] = key.split('-W');
+  const year = parseInt(yearStr, 10), week = parseInt(weekStr, 10);
+  // ISO week 1 contains Jan 4. The Monday of week 1 is Jan 4 minus its weekday offset.
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Dow = (jan4.getUTCDay() + 6) % 7; // 0 = Mon
+  const week1Mon = new Date(jan4.getTime() - jan4Dow * 86400000);
+  const start = new Date(week1Mon.getTime() + (week - 1) * 7 * 86400000);
+  const end   = new Date(start.getTime() + 6 * 86400000);
+  return { start, end };
+}
+// Pretty-format a bucket label for axis ticks: weekly shows "W18 Apr 27–May 3",
+// monthly shows "May 2026". Keeps year off weeks unless the year changes mid-chart.
+function kpiFormatBucketLabel(key, granularity) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (granularity === 'month') {
+    const [y, m] = key.split('-');
+    return `${months[parseInt(m, 10) - 1]} ${y}`;
+  }
+  // weekly
+  const { start, end } = kpiWeekRangeFromKey(key);
+  const weekNum = key.split('-W')[1];
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
+  const sm = months[start.getUTCMonth()], em = months[end.getUTCMonth()];
+  const sd = start.getUTCDate(),         ed = end.getUTCDate();
+  const range = sameMonth ? `${sm} ${sd}–${ed}` : `${sm} ${sd}–${em} ${ed}`;
+  return [`W${weekNum}`, range];
+}
 
 function kpiFilterRows() {
   const range = document.getElementById('kpiRange').value;
@@ -1825,29 +1867,42 @@ function kpiRenderTrendChart(rows) {
   const ctx = document.getElementById('kpiTrendChart');
   if (!ctx || typeof Chart === 'undefined') return;
 
-  // Group received orders by ISO week, split into in-SLO and out-of-SLO buckets.
+  // Granularity picker — defaults to weekly
+  const granularity = (document.getElementById('kpiTrendGranularity') || {}).value || 'week';
+  const isMonth = granularity === 'month';
+
+  // Update card title/subtitle to reflect granularity
+  const titleEl = document.getElementById('kpiTrendTitle');
+  const subEl   = document.getElementById('kpiTrendSubtitle');
+  if (titleEl) titleEl.textContent = isMonth ? 'Monthly trend' : 'Weekly trend';
+  if (subEl)   subEl.textContent   = isMonth
+    ? 'Shipments received per month, split by in-SLO vs out-of-SLO'
+    : 'Shipments received per week, split by in-SLO vs out-of-SLO';
+
+  // Group received orders by bucket key, split into in-SLO and out-of-SLO buckets.
   const cfg = kpiGetLegConfig();
-  const byWeek = {};
+  const byBucket = {};
   rows.forEach(r => {
     if (!cfg.hasData(r)) return;
     const endDate = kpiParseDate(r[cfg.endField]);
     const h = cfg.getHours(r);
     if (!endDate || h === null || isNaN(h)) return;
-    const week = kpiIsoWeekKey(endDate);
-    if (!byWeek[week]) byWeek[week] = { inSlo: 0, outSlo: 0 };
-    if (cfg.sloMet(r, h) === 'yes') byWeek[week].inSlo++;
-    else byWeek[week].outSlo++;
+    const bucket = isMonth ? kpiMonthKey(endDate) : kpiIsoWeekKey(endDate);
+    if (!byBucket[bucket]) byBucket[bucket] = { inSlo: 0, outSlo: 0 };
+    if (cfg.sloMet(r, h) === 'yes') byBucket[bucket].inSlo++;
+    else byBucket[bucket].outSlo++;
   });
 
-  const weeks        = Object.keys(byWeek).sort();
-  const inSloCounts  = weeks.map(w => byWeek[w].inSlo);
-  const outSloCounts = weeks.map(w => byWeek[w].outSlo);
+  const keys         = Object.keys(byBucket).sort();
+  const labels       = keys.map(k => kpiFormatBucketLabel(k, granularity));
+  const inSloCounts  = keys.map(k => byBucket[k].inSlo);
+  const outSloCounts = keys.map(k => byBucket[k].outSlo);
 
   if (kpiTrendChartObj) kpiTrendChartObj.destroy();
   kpiTrendChartObj = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: weeks,
+      labels: labels,
       datasets: [
         { label: 'In SLO',     data: inSloCounts,  backgroundColor: 'rgba(22,163,74,0.85)',  borderColor: '#16a34a', borderWidth: 1, stack: 'total' },
         { label: 'Out of SLO', data: outSloCounts, backgroundColor: 'rgba(220,38,38,0.85)',  borderColor: '#dc2626', borderWidth: 1, stack: 'total' }
@@ -1857,7 +1912,7 @@ function kpiRenderTrendChart(rows) {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { stacked: true, title: { display: true, text: 'Week' } },
+        x: { stacked: true, title: { display: true, text: isMonth ? 'Month' : 'Week' }, ticks: { font: { size: 11 } } },
         y: { stacked: true, title: { display: true, text: 'Shipments received' }, ticks: { precision: 0 }, beginAtZero: true }
       },
       plugins: {
@@ -1865,6 +1920,11 @@ function kpiRenderTrendChart(rows) {
         tooltip: {
           mode: 'index',
           callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              const lbl = items[0].label;
+              return Array.isArray(lbl) ? lbl.join(' · ') : lbl;
+            },
             label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
             footer: (items) => {
               const total = items.reduce((sum, i) => sum + (i.parsed.y || 0), 0);
