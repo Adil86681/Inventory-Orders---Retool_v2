@@ -641,9 +641,9 @@
 .fbinv-pg-btns button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* ─── Inbound KPI dashboard ────────────────────────────────────────────── */
-.kpi-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
-@media(max-width:1200px) { .kpi-cards { grid-template-columns: repeat(3, 1fr); } }
-@media(max-width:700px)  { .kpi-cards { grid-template-columns: repeat(2, 1fr); } }
+.kpi-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+@media(max-width:900px) { .kpi-cards { grid-template-columns: repeat(2, 1fr); } }
+@media(max-width:600px)  { .kpi-cards { grid-template-columns: 1fr; } }
 .kpi-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 18px 20px;
@@ -1197,7 +1197,7 @@
   <div class="page-header">
     <div class="page-title">
       <h1>Inbound KPI</h1>
-      <p>At-facility &rarr; completed SLO &lt; 48 hours</p>
+      <p>At-facility &rarr; completed SLO &le; 2 business days (business days only — Mon-Fri)</p>
     </div>
     <div class="page-actions">
       <button class="btn btn-primary" onclick="kpiDashLoad()">↻ Refresh</button>
@@ -1249,20 +1249,10 @@
       <div class="kpi-card-value" id="kpiVal-slo">—</div>
       <div class="kpi-card-sub" id="kpiSub-slo">no data</div>
     </div>
-    <div class="kpi-card" id="kpiCard-median">
-      <div class="kpi-card-label">Median Hours</div>
-      <div class="kpi-card-value" id="kpiVal-median">—</div>
-      <div class="kpi-card-sub">at facility &rarr; completed</div>
-    </div>
-    <div class="kpi-card" id="kpiCard-p90">
-      <div class="kpi-card-label">P90 Hours</div>
-      <div class="kpi-card-value" id="kpiVal-p90">—</div>
-      <div class="kpi-card-sub">at facility &rarr; completed</div>
-    </div>
     <div class="kpi-card red" id="kpiCard-breach">
       <div class="kpi-card-label" id="kpiLbl-breach">Open Breaches</div>
       <div class="kpi-card-value" id="kpiVal-breach">—</div>
-      <div class="kpi-card-sub" id="kpiSub-breach">currently &gt; 48h at facility</div>
+      <div class="kpi-card-sub" id="kpiSub-breach">currently &gt; 2 business days at facility</div>
     </div>
     <div class="kpi-card" id="kpiCard-total">
       <div class="kpi-card-label" id="kpiLbl-total">Completed (window)</div>
@@ -1287,9 +1277,25 @@
     </div>
     <div class="kpi-chart-card">
       <div class="kpi-chart-title" id="kpiHistTitle">Cycle time distribution</div>
-      <div class="kpi-chart-subtitle" id="kpiHistSubtitle">Hours from at facility &rarr; completed</div>
+      <div class="kpi-chart-subtitle" id="kpiHistSubtitle">Business days from at facility &rarr; completed</div>
       <div class="kpi-chart-canvas-wrap"><canvas id="kpiHistChart"></canvas></div>
     </div>
+  </div>
+
+  <!-- Missed SLO completions chart -->
+  <div class="kpi-chart-card" style="margin-bottom:24px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
+      <div>
+        <div class="kpi-chart-title" id="kpiMissedTitle">Missed SLO completions</div>
+        <div class="kpi-chart-subtitle" id="kpiMissedSubtitle">Completed orders that took &gt; 2 business days · respects warehouse filter above</div>
+      </div>
+      <select id="kpiMissedGranularity" onchange="kpiDashRender()" style="align-self:center;">
+        <option value="warehouse" selected>By warehouse</option>
+        <option value="week">By week</option>
+        <option value="month">By month</option>
+      </select>
+    </div>
+    <div class="kpi-chart-canvas-wrap"><canvas id="kpiMissedChart"></canvas></div>
   </div>
 
   <div class="kpi-table-wrap">
@@ -1302,7 +1308,7 @@
         <thead>
           <tr>
             <th>Order</th><th>Org</th><th>Warehouse</th><th>Product</th>
-            <th>At facility</th><th>Hours overdue</th>
+            <th>At facility</th><th>Days overdue</th>
           </tr>
         </thead>
         <tbody><tr><td colspan="6" class="kpi-loading">Loading…</td></tr></tbody>
@@ -1322,12 +1328,11 @@
             <th>Warehouse</th>
             <th class="num">Completed</th>
             <th class="num">% SLO Met</th>
-            <th class="num">Median hrs</th>
-            <th class="num">P90 hrs</th>
+            <th class="num">Missed SLO</th>
             <th class="num">Open breaches</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="6" class="kpi-loading">Loading…</td></tr></tbody>
+        <tbody><tr><td colspan="5" class="kpi-loading">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1685,8 +1690,9 @@ async function kpiFetchCompletedBackstop() {
 // Reads rows from the KPI_Tracker sheet (via the same Apps Script web app's
 // GET ?action=read endpoint), computes SLO metrics, renders cards/charts/tables.
 
-const KPI_SLO_HOURS = 48;         // < 2 days from at_facility -> completed
+const KPI_SLO_HOURS = 48;         // legacy; kept for shipped→facility leg
 const KPI_SLO_SHIPPED_HOURS = 72; // < 3 days from shipped -> at_facility
+const KPI_SLO_DAYS  = 2;          // ≤ 2 business days from at_facility -> completed
 
 // Returns config object describing the currently selected KPI leg.
 function kpiGetLegConfig() {
@@ -1699,6 +1705,7 @@ function kpiGetLegConfig() {
       // Tracker-mode flag for "stuck" shipments. Calendar hours (carrier
       // doesn't pause for weekends), threshold = 7 days.
       stuckHours: 168,
+      stuckDays:  7,
       stuckMode:  'calendar',
       stuckLabel: 'stuck >7 days',
       startField: 'shipped_at',
@@ -1708,9 +1715,14 @@ function kpiGetLegConfig() {
       sloLabel:   '',
       // Carriers operate weekends, so transit time is calendar, not business.
       hourMode:   'calendar',
+      unitMode:   'calendar_hours',
       hasData:    r => r.shipped_at && r.at_facility_at,
       isOpen:     r => r.shipped_at && !r.at_facility_at,
       getHours:   r => {
+        const s = kpiParseDate(r.shipped_at), e = kpiParseDate(r.at_facility_at);
+        return (s && e) ? kpiHoursBetween(s.getTime(), e.getTime(), 'calendar') : null;
+      },
+      getValue:   r => {
         const s = kpiParseDate(r.shipped_at), e = kpiParseDate(r.at_facility_at);
         return (s && e) ? kpiHoursBetween(s.getTime(), e.getTime(), 'calendar') : null;
       },
@@ -1720,29 +1732,36 @@ function kpiGetLegConfig() {
   return {
     leg,
     hasSlo:     true,
-    sloHours:   KPI_SLO_HOURS,
-    stuckHours: KPI_SLO_HOURS,
-    stuckMode:  'business',
-    stuckLabel: `currently >${KPI_SLO_HOURS}h at facility`,
+    sloDays:    KPI_SLO_DAYS,
+    stuckDays:  KPI_SLO_DAYS,
+    stuckMode:  'business_days',
+    stuckLabel: `currently >${KPI_SLO_DAYS} business days at facility`,
     startField: 'at_facility_at',
     endField:   'completed_at',
     label:      'At facility → Completed',
     subLabel:   'at facility → completed',
-    sloLabel:   `currently >${KPI_SLO_HOURS}h at facility`,
-    hourMode:   'business',
+    sloLabel:   `currently >${KPI_SLO_DAYS} business days at facility`,
+    unitMode:   'business_days',
     hasData:    r => r.at_facility_at && r.completed_at,
     isOpen:     r => r.at_facility_at && !r.completed_at,
-    getHours:   r => {
+    // Returns business-day diff (date-only, Sat/Sun excluded). Time of day ignored.
+    getDays:    r => {
       const s = kpiParseDate(r.at_facility_at), e = kpiParseDate(r.completed_at);
-      return (s && e) ? kpiBusinessHoursBetween(s.getTime(), e.getTime()) : null;
+      return (s && e) ? kpiBusinessDaysBetween(s, e) : null;
     },
-    sloMet:     (r, h) => h !== null ? (h <= KPI_SLO_HOURS ? 'yes' : 'no') : null,
+    // Backwards-compat alias used by existing renderers — same numeric value.
+    getValue:   r => {
+      const s = kpiParseDate(r.at_facility_at), e = kpiParseDate(r.completed_at);
+      return (s && e) ? kpiBusinessDaysBetween(s, e) : null;
+    },
+    sloMet:     (r, d) => d !== null ? (d <= KPI_SLO_DAYS ? 'yes' : 'no') : null,
   };
 }
 let kpiDashRows = [];
 let kpiDashLoading = false;
 let kpiTrendChartObj = null;
 let kpiHistChartObj = null;
+let kpiMissedChartObj = null;
 
 function kpiDashSetStatus(text) {
   const el = document.getElementById('kpiDashStatus');
@@ -1813,6 +1832,35 @@ function kpiBusinessHoursBetween(startMs, endMs) {
     cursor = dayEnd;
   }
   return total;
+}
+
+// Business-day diff between two dates, ignoring time-of-day. Returns the count
+// of business days strictly after `start` up to and including `end`. Saturdays
+// and Sundays are excluded. Examples (assuming all weekdays):
+//   start=Tue, end=Tue  → 0
+//   start=Tue May 5, end=Thu May 7  → 2
+//   start=Fri, end=Mon              → 1  (only Mon counts; Sat/Sun skipped)
+//   start=Fri, end=Tue              → 2  (Mon + Tue)
+function kpiBusinessDaysBetween(start, end) {
+  if (!start || !end) return null;
+  // Normalise to local midnight so time-of-day is ignored.
+  const a = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const b = new Date(end.getFullYear(),   end.getMonth(),   end.getDate());
+  if (b <= a) return 0;
+  let count = 0;
+  const cur = new Date(a);
+  cur.setDate(cur.getDate() + 1);
+  while (cur <= b) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+// Business days from `start` to "now" — used for open-breach detection.
+function kpiBusinessDaysSince(start) {
+  return start ? kpiBusinessDaysBetween(start, new Date()) : null;
 }
 
 function kpiPercentile(arr, p) {
@@ -1893,6 +1941,7 @@ function kpiDashRender() {
   kpiRenderCards(rows);
   kpiRenderTrendChart(rows);
   kpiRenderHistogram(rows);
+  kpiRenderMissedSloChart(rows);
   kpiRenderBreachTable(rows);
   kpiRenderWarehouseTable(rows);
 }
@@ -1902,29 +1951,21 @@ function kpiRenderCards(rows) {
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
   const completed = rows.filter(r => cfg.hasData(r));
-  const hours = completed.map(r => cfg.getHours(r)).filter(n => n !== null && !isNaN(n));
 
-  const median = hours.length ? kpiPercentile(hours, 0.5) : null;
-  const p90    = hours.length ? kpiPercentile(hours, 0.9) : null;
-
-  // "Stuck" detection — flags open shipments that have been in this leg longer
-  // than cfg.stuckHours, using the leg's stuckMode (calendar vs business).
-  const now = Date.now();
+  // Stuck/breach detection — uses business-day diff for the SLO leg, calendar
+  // hours for the tracker leg.
   const stuck = rows.filter(r => {
     if (!cfg.isOpen(r)) return false;
     const start = kpiParseDate(r[cfg.startField]);
     if (!start) return false;
-    return kpiHoursBetween(start.getTime(), now, cfg.stuckMode) > cfg.stuckHours;
+    if (cfg.stuckMode === 'business_days') {
+      return kpiBusinessDaysSince(start) > cfg.stuckDays;
+    }
+    return kpiHoursBetween(start.getTime(), Date.now(), cfg.stuckMode) > cfg.stuckHours;
   });
 
-  // Median / P90 / total — same shape on both legs
-  setText('kpiVal-median', median === null ? '—' : median.toFixed(1) + 'h');
-  setText('kpiVal-p90',    p90    === null ? '—' : p90.toFixed(1)    + 'h');
   setText('kpiVal-total',  completed.length);
-  setText('kpiSub-total',  hours.length ? `${hours.length} with transit time` : 'orders');
-  document.querySelectorAll('#kpiCard-median .kpi-card-sub, #kpiCard-p90 .kpi-card-sub').forEach(el => {
-    el.textContent = cfg.subLabel;
-  });
+  setText('kpiSub-total',  completed.length ? 'orders with both timestamps' : 'orders');
 
   // Stuck/breach card — relabel per leg
   setText('kpiVal-breach', stuck.length);
@@ -1937,11 +1978,11 @@ function kpiRenderCards(rows) {
   const sloCard = document.getElementById('kpiCard-slo');
   if (cfg.hasSlo) {
     const sloEvalRows = completed.filter(r => {
-      const h = cfg.getHours(r);
-      const sm = cfg.sloMet(r, h);
+      const v = cfg.getValue(r);
+      const sm = cfg.sloMet(r, v);
       return sm === 'yes' || sm === 'no';
     });
-    const sloMetCount = sloEvalRows.filter(r => cfg.sloMet(r, cfg.getHours(r)) === 'yes').length;
+    const sloMetCount = sloEvalRows.filter(r => cfg.sloMet(r, cfg.getValue(r)) === 'yes').length;
     const sloEval = sloEvalRows.length;
     const sloPct = sloEval > 0 ? Math.round((sloMetCount / sloEval) * 100) : null;
 
@@ -1997,12 +2038,12 @@ function kpiRenderTrendChart(rows) {
   rows.forEach(r => {
     if (!cfg.hasData(r)) return;
     const endDate = kpiParseDate(r[cfg.endField]);
-    const h = cfg.getHours(r);
-    if (!endDate || h === null || isNaN(h)) return;
+    const v = cfg.getValue(r);
+    if (!endDate || v === null || isNaN(v)) return;
     const bucket = isMonth ? kpiMonthKey(endDate) : kpiIsoWeekKey(endDate);
     if (!byBucket[bucket]) byBucket[bucket] = { inSlo: 0, outSlo: 0, total: 0 };
     byBucket[bucket].total++;
-    if (cfg.hasSlo && cfg.sloMet(r, h) === 'yes') byBucket[bucket].inSlo++;
+    if (cfg.hasSlo && cfg.sloMet(r, v) === 'yes') byBucket[bucket].inSlo++;
     else if (cfg.hasSlo) byBucket[bucket].outSlo++;
   });
 
@@ -2063,47 +2104,47 @@ function kpiRenderHistogram(rows) {
 
   const cfg = kpiGetLegConfig();
 
-  // Update card title/subtitle based on leg
   const titleEl = document.getElementById('kpiHistTitle');
   const subEl   = document.getElementById('kpiHistSubtitle');
   if (titleEl) titleEl.textContent = cfg.hasSlo ? 'Cycle time distribution' : 'Transit time distribution';
   if (subEl)   subEl.textContent   = cfg.hasSlo
-    ? 'Business hours from at facility → completed'
+    ? 'Business days from at facility → completed'
     : 'Calendar days from shipped → at facility';
 
-  const hours = rows
+  const values = rows
     .filter(r => cfg.hasData(r))
-    .map(r => cfg.getHours(r))
+    .map(r => cfg.getValue(r))
     .filter(n => n !== null && !isNaN(n));
 
-  // SLO leg uses hour buckets coloured by SLO threshold. Tracker leg uses
-  // day buckets in a single neutral colour (no SLO concept).
-  let buckets;
+  // SLO leg uses business-day buckets coloured by SLO threshold (≤2 = in SLO).
+  // Tracker leg keeps its calendar-hour buckets binned to days.
+  let buckets, xLabel;
   if (cfg.hasSlo) {
+    const IN  = '#16a34a';
+    const OUT = '#dc2626';
     buckets = [
-      { label: '0-12h',   min: 0,   max: 12,    color: '#16a34a' },
-      { label: '12-24h',  min: 12,  max: 24,    color: '#16a34a' },
-      { label: '24-36h',  min: 24,  max: 36,    color: '#16a34a' },
-      { label: '36-48h',  min: 36,  max: 48,    color: '#16a34a' },
-      { label: '48-72h',  min: 48,  max: 72,    color: '#dc2626' },
-      { label: '72-120h', min: 72,  max: 120,   color: '#dc2626' },
-      { label: '120h+',   min: 120, max: Infinity, color: '#dc2626' }
+      { label: '0 days', min: 0, max: 1,        color: IN  },
+      { label: '1 day',  min: 1, max: 2,        color: IN  },
+      { label: '2 days', min: 2, max: 3,        color: IN  },
+      { label: '3 days', min: 3, max: 4,        color: OUT },
+      { label: '4 days', min: 4, max: 5,        color: OUT },
+      { label: '5+ days',min: 5, max: Infinity, color: OUT }
     ];
+    xLabel = 'Business days (at facility → completed)';
   } else {
-    // Tracker buckets in days (carrier transit usually multi-day)
     const NEUTRAL = '#3d6fff';
     const STALE   = '#dc2626';
     buckets = [
-      { label: '<1d',  min: 0,            max: 24,            color: NEUTRAL },
-      { label: '1-2d', min: 24,           max: 48,            color: NEUTRAL },
-      { label: '2-3d', min: 48,           max: 72,            color: NEUTRAL },
-      { label: '3-5d', min: 72,           max: 120,           color: NEUTRAL },
-      { label: '5-7d', min: 120,          max: 168,           color: NEUTRAL },
-      { label: '7d+',  min: 168,          max: Infinity,      color: STALE }
+      { label: '<1d',  min: 0,   max: 24,       color: NEUTRAL },
+      { label: '1-2d', min: 24,  max: 48,       color: NEUTRAL },
+      { label: '2-3d', min: 48,  max: 72,       color: NEUTRAL },
+      { label: '3-5d', min: 72,  max: 120,      color: NEUTRAL },
+      { label: '5-7d', min: 120, max: 168,      color: NEUTRAL },
+      { label: '7d+',  min: 168, max: Infinity, color: STALE }
     ];
+    xLabel = 'Calendar hours (shipped → at facility)';
   }
-  const counts = buckets.map(b => hours.filter(h => h >= b.min && h < b.max).length);
-  const xUnit  = cfg.hourMode === 'calendar' ? 'Calendar hours' : 'Business hours';
+  const counts = buckets.map(b => values.filter(v => v >= b.min && v < b.max).length);
 
   if (kpiHistChartObj) kpiHistChartObj.destroy();
   kpiHistChartObj = new Chart(ctx, {
@@ -2122,8 +2163,134 @@ function kpiRenderHistogram(rows) {
       plugins: { legend: { display: false } },
       scales: {
         y: { title: { display: true, text: 'Orders' }, ticks: { precision: 0 } },
-        x: { title: { display: true, text: `${xUnit} (${cfg.subLabel})` } }
+        x: { title: { display: true, text: xLabel } }
       }
+    }
+  });
+}
+
+// ─── Missed SLO chart ────────────────────────────────────────────────────────
+// Bar chart of completed orders that took longer than the SLO. Three views:
+//   "warehouse" — bars per warehouse (default; honours warehouse filter above)
+//   "week"      — missed-SLO completions bucketed by ISO week of completion
+//   "month"     — missed-SLO completions bucketed by month of completion
+// Tracker leg (shipped → at facility) has no SLO, so this chart shows an empty
+// state explaining there's nothing to render.
+function kpiRenderMissedSloChart(rows) {
+  const ctx = document.getElementById('kpiMissedChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+
+  const cfg = kpiGetLegConfig();
+  const granularity = (document.getElementById('kpiMissedGranularity') || {}).value || 'warehouse';
+  const titleEl = document.getElementById('kpiMissedTitle');
+  const subEl   = document.getElementById('kpiMissedSubtitle');
+
+  // Tracker leg has no SLO concept — wipe the chart and show a hint.
+  if (!cfg.hasSlo) {
+    if (titleEl) titleEl.textContent = 'Missed SLO completions';
+    if (subEl)   subEl.textContent   = 'Not applicable on the Shipped → At facility leg (no SLO).';
+    if (kpiMissedChartObj) { kpiMissedChartObj.destroy(); kpiMissedChartObj = null; }
+    return;
+  }
+
+  if (subEl) {
+    if (granularity === 'warehouse') {
+      subEl.textContent = 'Completed orders that took > 2 business days · grouped by warehouse · respects window/warehouse filters';
+    } else if (granularity === 'month') {
+      subEl.textContent = 'Completed orders that took > 2 business days · grouped by month of completion';
+    } else {
+      subEl.textContent = 'Completed orders that took > 2 business days · grouped by ISO week of completion';
+    }
+  }
+  if (titleEl) titleEl.textContent = 'Missed SLO completions';
+
+  // Filter to completed orders that breached SLO.
+  const missed = rows.filter(r => {
+    if (!cfg.hasData(r)) return false;
+    const v = cfg.getValue(r);
+    return v !== null && !isNaN(v) && cfg.sloMet(r, v) === 'no';
+  });
+
+  let labels, counts, xLabel;
+  if (granularity === 'warehouse') {
+    const byWh = {};
+    missed.forEach(r => {
+      const wh = (r.warehouse || '(unknown)').replace('Warehouse - ', '');
+      byWh[wh] = (byWh[wh] || 0) + 1;
+    });
+    const entries = Object.entries(byWh).sort((a, b) => b[1] - a[1]);
+    labels = entries.map(e => e[0]);
+    counts = entries.map(e => e[1]);
+    xLabel = 'Warehouse';
+  } else {
+    const isMonth = granularity === 'month';
+    const byBucket = {};
+    missed.forEach(r => {
+      const end = kpiParseDate(r.completed_at);
+      if (!end) return;
+      const k = isMonth ? kpiMonthKey(end) : kpiIsoWeekKey(end);
+      byBucket[k] = (byBucket[k] || 0) + 1;
+    });
+    const keys = Object.keys(byBucket).sort();
+    labels = keys.map(k => kpiFormatBucketLabel(k, isMonth ? 'month' : 'week'));
+    counts = keys.map(k => byBucket[k]);
+    xLabel = isMonth ? 'Month' : 'Week';
+  }
+
+  if (kpiMissedChartObj) kpiMissedChartObj.destroy();
+
+  if (labels.length === 0) {
+    // Render an empty chart so the canvas still draws an axis with a clear "no data" note in subtitle.
+    if (subEl) subEl.textContent += ' · no missed-SLO orders in this window';
+    kpiMissedChartObj = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: ['No missed orders'], datasets: [{ label: 'Missed', data: [0], backgroundColor: 'rgba(156,163,175,0.5)' }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+    return;
+  }
+
+  kpiMissedChartObj = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Missed SLO',
+        data: counts,
+        backgroundColor: 'rgba(220,38,38,0.85)',
+        borderColor: '#dc2626',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: granularity === 'warehouse' ? 'y' : 'x',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              const lbl = items[0].label;
+              return Array.isArray(lbl) ? lbl.join(' · ') : lbl;
+            },
+            label: (ctx) => `${ctx.parsed.x ?? ctx.parsed.y} order${(ctx.parsed.x ?? ctx.parsed.y) === 1 ? '' : 's'}`
+          }
+        }
+      },
+      scales: granularity === 'warehouse'
+        ? {
+            x: { title: { display: true, text: 'Missed SLO orders' }, ticks: { precision: 0 }, beginAtZero: true },
+            y: { title: { display: false }, ticks: { font: { size: 11 } } }
+          }
+        : {
+            x: { title: { display: true, text: xLabel }, ticks: { font: { size: 11 } } },
+            y: { title: { display: true, text: 'Missed SLO orders' }, ticks: { precision: 0 }, beginAtZero: true }
+          }
     }
   });
 }
@@ -2136,22 +2303,25 @@ function kpiRenderBreachTable(rows) {
   if (!tbody) return;
   const cfg = kpiGetLegConfig();
 
-  // Title + last column relabel based on leg
   if (titleEl) titleEl.textContent = cfg.hasSlo ? 'Open SLO breaches' : 'Stuck shipments (>7 days)';
   if (thead) {
     const ths = thead.querySelectorAll('th');
     if (ths[4]) ths[4].textContent = cfg.leg === 'shipped_facility' ? 'Shipped' : 'At facility';
-    if (ths[5]) ths[5].textContent = cfg.hasSlo ? 'Hours overdue' : 'Days in transit';
+    if (ths[5]) ths[5].textContent = cfg.hasSlo ? 'Days overdue' : 'Days in transit';
   }
 
-  const now = Date.now();
   const flagged = rows
     .filter(r => cfg.isOpen(r))
     .map(r => {
       const start = kpiParseDate(r[cfg.startField]);
-      const hoursIn = start ? kpiHoursBetween(start.getTime(), now, cfg.stuckMode) : null;
-      const overBy = hoursIn !== null ? hoursIn - cfg.stuckHours : null;
-      return { ...r, _hoursIn: hoursIn, _overBy: overBy };
+      if (!start) return { ...r, _daysIn: null, _overBy: null };
+      if (cfg.stuckMode === 'business_days') {
+        const daysIn = kpiBusinessDaysSince(start);
+        return { ...r, _daysIn: daysIn, _overBy: daysIn !== null ? daysIn - cfg.stuckDays : null };
+      }
+      // tracker leg keeps calendar hours
+      const hoursIn = kpiHoursBetween(start.getTime(), Date.now(), cfg.stuckMode);
+      return { ...r, _daysIn: hoursIn / 24, _overBy: (hoursIn / 24) - (cfg.stuckHours / 24) };
     })
     .filter(r => r._overBy !== null && r._overBy > 0)
     .sort((a, b) => b._overBy - a._overBy);
@@ -2168,15 +2338,15 @@ function kpiRenderBreachTable(rows) {
 
   tbody.innerHTML = flagged.map(r => {
     const lastCol = cfg.hasSlo
-      ? `+${r._overBy.toFixed(1)}h`
-      : `${(r._hoursIn / 24).toFixed(1)}d`;
+      ? `+${r._overBy} day${Math.abs(r._overBy) === 1 ? '' : 's'}`
+      : `${r._daysIn.toFixed(1)}d`;
     return `
     <tr>
       <td class="mono">${escapeHTML(r.friendly_order_id || '')}</td>
       <td>${escapeHTML(r.organization || '')}</td>
       <td>${escapeHTML((r.warehouse || '').replace('Warehouse - ', ''))}</td>
       <td>${escapeHTML(r.product_title || '')}</td>
-      <td class="mono">${escapeHTML(String(r[cfg.startField] || '').substring(0, 16).replace('T', ' '))}</td>
+      <td class="mono">${escapeHTML(String(r[cfg.startField] || '').substring(0, 10))}</td>
       <td class="num kpi-breach-age">${lastCol}</td>
     </tr>
   `;
@@ -2188,33 +2358,39 @@ function kpiRenderWarehouseTable(rows) {
   const counter = document.getElementById('kpiWhCount');
   if (!tbody) return;
 
-  const now = Date.now();
   const cfg = kpiGetLegConfig();
 
-  // Dynamic header relabel — SLO column hidden as "—" on tracker leg, breach
-  // column reads "Stuck >7d" instead of "Open breaches".
+  // Dynamic header relabel.
   const thead = document.querySelector('#kpiWhTable thead tr');
   if (thead) {
     const ths = thead.querySelectorAll('th');
     if (ths[2]) ths[2].textContent = cfg.hasSlo ? '% SLO Met' : '—';
-    if (ths[5]) ths[5].textContent = cfg.hasSlo ? 'Open breaches' : 'Stuck >7d';
+    if (ths[3]) ths[3].textContent = cfg.hasSlo ? 'Missed SLO' : '—';
+    if (ths[4]) ths[4].textContent = cfg.hasSlo ? 'Open breaches' : 'Stuck >7d';
   }
 
   const byWh = {};
   rows.forEach(r => {
     const wh = r.warehouse || '(unknown)';
-    if (!byWh[wh]) byWh[wh] = { hours: [], met: 0, total: 0, flagged: 0 };
+    if (!byWh[wh]) byWh[wh] = { total: 0, met: 0, missed: 0, flagged: 0 };
 
     if (cfg.hasData(r)) {
-      const h = cfg.getHours(r);
-      if (h !== null && !isNaN(h)) byWh[wh].hours.push(h);
+      const v = cfg.getValue(r);
       byWh[wh].total++;
-      if (cfg.hasSlo && cfg.sloMet(r, h) === 'yes') byWh[wh].met++;
+      if (cfg.hasSlo && v !== null && !isNaN(v)) {
+        if (cfg.sloMet(r, v) === 'yes') byWh[wh].met++;
+        else                            byWh[wh].missed++;
+      }
     } else if (cfg.isOpen(r)) {
       const start = kpiParseDate(r[cfg.startField]);
-      if (start && kpiHoursBetween(start.getTime(), now, cfg.stuckMode) > cfg.stuckHours) {
-        byWh[wh].flagged++;
+      if (!start) return;
+      let isStuck = false;
+      if (cfg.stuckMode === 'business_days') {
+        isStuck = kpiBusinessDaysSince(start) > cfg.stuckDays;
+      } else {
+        isStuck = kpiHoursBetween(start.getTime(), Date.now(), cfg.stuckMode) > cfg.stuckHours;
       }
+      if (isStuck) byWh[wh].flagged++;
     }
   });
 
@@ -2222,23 +2398,21 @@ function kpiRenderWarehouseTable(rows) {
   if (counter) counter.textContent = `${whList.length} warehouse${whList.length === 1 ? '' : 's'}`;
 
   if (whList.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="kpi-empty">No data in this window.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="kpi-empty">No data in this window.</td></tr>';
     return;
   }
 
   tbody.innerHTML = whList.map(wh => {
     const d = byWh[wh];
     const sloPct = (cfg.hasSlo && d.total > 0) ? Math.round((d.met / d.total) * 100) : null;
-    const median = d.hours.length ? kpiPercentile(d.hours, 0.5) : null;
-    const p90    = d.hours.length ? kpiPercentile(d.hours, 0.9) : null;
     const sloCell = cfg.hasSlo ? (sloPct === null ? '—' : sloPct + '%') : '—';
+    const missedCell = cfg.hasSlo ? d.missed : '—';
     return `
       <tr>
         <td>${escapeHTML(wh.replace('Warehouse - ', ''))}</td>
         <td class="num">${d.total}</td>
         <td class="num">${sloCell}</td>
-        <td class="num">${median === null ? '—' : median.toFixed(1)}</td>
-        <td class="num">${p90    === null ? '—' : p90.toFixed(1)}</td>
+        <td class="num" style="color:${cfg.hasSlo && d.missed > 0 ? 'var(--red)' : 'var(--text2)'}">${missedCell}</td>
         <td class="num" style="color:${d.flagged > 0 ? 'var(--red)' : 'var(--text2)'}">${d.flagged}</td>
       </tr>`;
   }).join('');
