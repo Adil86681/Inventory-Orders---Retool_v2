@@ -1429,6 +1429,20 @@ const KPI_SNAPSHOT_KEY = 'kpi_tracker_snapshot_v1';
 // (because the live poll missed the brief SHIPPED window).
 const SHIPPED_OR_LATER = new Set(['SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED']);
 
+// Item- and order-level statuses that imply the order has already reached the
+// processing facility. Used to fire the 'at_facility' transition when an item
+// skipped past ARRIVED_AT_PROCESSING_FACILITY between two polls (e.g. SHIPPED
+// -> RECEIVED in one window). Order-level PARTIALLY_RECEIVED / COMPLETED also
+// imply the leg happened. Timestamp on synthesized events is now() — same as
+// the original AT_FACILITY detection, since the API doesn't expose a per-item
+// arrival time.
+const AT_FACILITY_OR_LATER_ITEM  = new Set(['ARRIVED_AT_PROCESSING_FACILITY', 'PARTIALLY_RECEIVED', 'RECEIVED']);
+const AT_FACILITY_OR_LATER_ORDER = new Set(['PARTIALLY_RECEIVED', 'COMPLETED']);
+function reachedFacility(itemStatuses, orderStatus) {
+  if (orderStatus && AT_FACILITY_OR_LATER_ORDER.has(orderStatus)) return true;
+  return itemStatuses.some(s => AT_FACILITY_OR_LATER_ITEM.has(s));
+}
+
 // One-time backfill flag — once set, kpiBackfillCurrentlyShipped will not
 // re-run. Clear this key in localStorage to force another backfill pass.
 const KPI_SHIPPED_BACKFILL_KEY = 'kpi_shipped_backfill_done_v1';
@@ -1608,7 +1622,11 @@ function kpiProcessOrders(allOrders) {
         });
         prev.hasShipped = true;
       }
-      if (itemStatuses.includes('ARRIVED_AT_PROCESSING_FACILITY')) prev.hasAtFacility = true;
+      // Order observed already past facility on first sight — suppress the
+      // event silently. We don't know when arrival actually happened and now()
+      // would be far off. Future orders that transition through facility while
+      // we're polling are caught by the witnessed-flip branch below.
+      if (reachedFacility(itemStatuses, orderStatus)) prev.hasAtFacility = true;
     } else {
       // shipped — witnessed status flip. We accept any status at-or-past
       // SHIPPED to handle the case where the order skipped past SHIPPED
@@ -1623,8 +1641,12 @@ function kpiProcessOrders(allOrders) {
         prev.hasShipped = true;
       }
 
-      // at_facility — witnessed item-level transition
-      if (!prev.hasAtFacility && itemStatuses.includes('ARRIVED_AT_PROCESSING_FACILITY')) {
+      // at_facility — witnessed transition. We accept any item or order
+      // status at-or-past facility (RECEIVED, PARTIALLY_RECEIVED, COMPLETED)
+      // to handle the case where items skipped past ARRIVED_AT_PROCESSING_
+      // FACILITY between polls. Timestamp is now() — same approximation the
+      // original AT_FACILITY-only detection used.
+      if (!prev.hasAtFacility && reachedFacility(itemStatuses, orderStatus)) {
         events.push({
           friendly_order_id: fid,
           transition: 'at_facility',
