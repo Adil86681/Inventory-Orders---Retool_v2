@@ -1439,8 +1439,10 @@ function kpiForceResync() {
   try { localStorage.removeItem(KPI_SNAPSHOT_KEY); } catch(e) {}
   try { localStorage.removeItem(KPI_SHIPPED_BACKFILL_KEY); } catch(e) {}
   kpiSetStatus('syncing', 'KPI: resyncing…');
-  // Trigger a fresh fetch which will re-fire all events against the cleared snapshot
-  manualRefresh();
+  // Call invFetchFromAPI directly — manualRefresh() skips it when no org is selected,
+  // but the KPI tracker processes ALL orders before any org filter, so we always want
+  // the full fetch regardless of what's loaded in the display.
+  invFetchFromAPI();
 }
 
 function kpiLoadSnapshot() {
