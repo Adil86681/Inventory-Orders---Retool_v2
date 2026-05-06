@@ -730,6 +730,7 @@
       <span id="kpiDot" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block"></span>
       <span id="kpiText">KPI: idle</span>
     </span>
+    <button class="refresh-btn" onclick="kpiForceResync()" title="Clear KPI snapshot and re-send all transitions — use this to split existing combined rows into per-item rows" style="font-size:10px;padding:2px 7px;opacity:0.75">↺ KPI resync</button>
     <span id="lastUpdated" style="font-size:11px;color:var(--muted)">Never synced</span>
     <button class="refresh-btn" id="inv-loadBtnTopbar" onclick="invLoadSelected()" disabled style="opacity:0.45;cursor:not-allowed" title="Select an org first">▶ Load</button>
     <button class="refresh-btn" onclick="manualRefresh()" title="Refresh now">↺ Refresh</button>
@@ -1433,6 +1434,15 @@ function reachedFacility(itemStatuses, orderStatus) {
 // re-run. Clear this key in localStorage to force another backfill pass.
 const KPI_SHIPPED_BACKFILL_KEY = 'kpi_shipped_backfill_done_v1';
 
+function kpiForceResync() {
+  if (!confirm('This will clear the KPI snapshot and re-send all transitions for currently visible orders, splitting any combined rows into per-item rows.\n\nProceed?')) return;
+  try { localStorage.removeItem(KPI_SNAPSHOT_KEY); } catch(e) {}
+  try { localStorage.removeItem(KPI_SHIPPED_BACKFILL_KEY); } catch(e) {}
+  kpiSetStatus('syncing', 'KPI: resyncing…');
+  // Trigger a fresh fetch which will re-fire all events against the cleared snapshot
+  manualRefresh();
+}
+
 function kpiLoadSnapshot() {
   try { const s = localStorage.getItem(KPI_SNAPSHOT_KEY); return s ? JSON.parse(s) : {}; }
   catch(e) { return {}; }
@@ -1483,7 +1493,7 @@ function kpiBuildMeta(order, items) {
       : '',
     // Per-item array — Apps Script writes one sheet row per entry
     items: items.map((it, idx) => ({
-      sku_id:        it.sku?.id || '',
+      sku_id:        it.sku?.id || it.sku?.vendorSku || `__item_${idx + 1}__`,
       product_title: it.sku?.skuInformation?.productTitle || '',
       quantity:      it.quantity || 0,
       item_index:    idx + 1
