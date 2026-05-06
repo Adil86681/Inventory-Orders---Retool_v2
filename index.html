@@ -571,8 +571,8 @@
 
   /* Flat multi-item row highlight — orders with >1 line item get a tint so
      rows belonging to the same order are visually grouped at a glance. */
-  tbody tr.multi-item-row { background: rgba(61,111,255,0.04); }
-  tbody tr.multi-item-row:hover { background: rgba(61,111,255,0.09) !important; }
+  tbody tr.multi-item-row { background: rgba(251,146,60,0.07); }
+  tbody tr.multi-item-row:hover { background: rgba(251,146,60,0.14) !important; }
   tbody tr.received.multi-item-row { background: rgba(217,119,6,0.07); }
   tbody tr.received.multi-item-row:hover { background: rgba(217,119,6,0.12) !important; }
   /* Stronger top border on the first row of each order group
@@ -1473,13 +1473,21 @@ function kpiBuildMeta(order, items) {
     inventory_order_id: order.id || '',
     organization: order.organization?.name || '',
     warehouse: wh,
+    // Legacy single-value fields kept for backward compat with old sheet rows
     product_title: items.length === 1
       ? (items[0].sku?.skuInformation?.productTitle || '')
       : `${items.length} items`,
     total_qty: items.reduce((s, it) => s + (it.quantity || 0), 0),
     submitted_by: order.submittedBy
       ? `${order.submittedBy.forename || ''} ${order.submittedBy.surname || ''}`.trim()
-      : ''
+      : '',
+    // Per-item array — Apps Script writes one sheet row per entry
+    items: items.map((it, idx) => ({
+      sku_id:        it.sku?.id || '',
+      product_title: it.sku?.skuInformation?.productTitle || '',
+      quantity:      it.quantity || 0,
+      item_index:    idx + 1
+    }))
   };
 }
 
@@ -1706,7 +1714,7 @@ async function kpiFetchCompletedBackstop() {
       submittedBy { forename surname email }
       inventoryOrderItems {
         quantity
-        sku { skuInformation { productTitle } }
+        sku { id skuInformation { productTitle } }
       }
     }
     totalElements
