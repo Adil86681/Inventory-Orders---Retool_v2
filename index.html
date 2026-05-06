@@ -1436,8 +1436,10 @@ const KPI_SHIPPED_BACKFILL_KEY = 'kpi_shipped_backfill_done_v1';
 
 function kpiForceResync() {
   if (!confirm('This will clear the KPI snapshot and re-send all transitions for currently visible orders, splitting any combined rows into per-item rows.\n\nProceed?')) return;
+  // Clear only the main snapshot — NOT the shipped-backfill flag.
+  // Clearing the backfill flag would fire a second concurrent POST to the Apps
+  // Script at the same time as the main sync, causing a lock_timeout error.
   try { localStorage.removeItem(KPI_SNAPSHOT_KEY); } catch(e) {}
-  try { localStorage.removeItem(KPI_SHIPPED_BACKFILL_KEY); } catch(e) {}
   kpiSetStatus('syncing', 'KPI: resyncing…');
   // Call invFetchFromAPI directly — manualRefresh() skips it when no org is selected,
   // but the KPI tracker processes ALL orders before any org filter, so we always want
