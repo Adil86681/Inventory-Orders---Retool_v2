@@ -1424,6 +1424,15 @@ function manualRefresh() {
 
 const KPI_SNAPSHOT_KEY = 'kpi_tracker_snapshot_v1';
 
+// Statuses that imply the order has already shipped. Used to backfill the
+// 'shipped' transition when we observe an order at a status past SHIPPED
+// (because the live poll missed the brief SHIPPED window).
+const SHIPPED_OR_LATER = new Set(['SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED']);
+
+// One-time backfill flag — once set, kpiBackfillCurrentlyShipped will not
+// re-run. Clear this key in localStorage to force another backfill pass.
+const KPI_SHIPPED_BACKFILL_KEY = 'kpi_shipped_backfill_done_v1';
+
 function kpiLoadSnapshot() {
   try { const s = localStorage.getItem(KPI_SNAPSHOT_KEY); return s ? JSON.parse(s) : {}; }
   catch(e) { return {}; }
@@ -1474,6 +1483,78 @@ function kpiBuildMeta(order, items) {
   };
 }
 
+// One-time backfill (gated by KPI_SHIPPED_BACKFILL_KEY in localStorage):
+// scans the live fetch for every order currently in SHIPPED status and logs
+// a 'shipped' transition with timestamp = order.updatedAt. Used to seed the
+// KPI sheet with the current state of in-flight shipments at deploy time so
+// downstream metrics aren't missing the shipped leg for orders that flipped
+// before the new detection logic landed. Updates the snapshot synchronously
+// so the subsequent kpiProcessOrders pass doesn't double-emit.
+function kpiBackfillCurrentlyShipped(allOrders) {
+  if (!KPI_TRACKER_URL) return;
+  if (localStorage.getItem(KPI_SHIPPED_BACKFILL_KEY)) return;
+
+  const snap = kpiLoadSnapshot();
+  const events = [];
+
+  allOrders.forEach(order => {
+    if (order.status !== 'SHIPPED') return;
+    const wh = order.warehouse?.name || '';
+    if (isBlockedWarehouse(wh)) return;
+
+    const fid = order.friendlyOrderId || order.id;
+    const prev = snap[fid] || {
+      hasOrdered: false, hasShipped: false, hasAtFacility: false, hasCompleted: false
+    };
+    if (prev.hasShipped) return; // already logged
+
+    const items = order.inventoryOrderItems || [];
+    const meta = kpiBuildMeta(order, items);
+
+    // If we'd never seen this order before, log ordered first so the leg is
+    // complete. createdAt is authoritative.
+    if (!prev.hasOrdered) {
+      events.push({
+        friendly_order_id: fid,
+        transition: 'ordered',
+        timestamp: order.createdAt || new Date().toISOString(),
+        ...meta
+      });
+      prev.hasOrdered = true;
+    }
+
+    events.push({
+      friendly_order_id: fid,
+      transition: 'shipped',
+      timestamp: order.updatedAt || new Date().toISOString(),
+      ...meta
+    });
+    prev.hasShipped = true;
+    prev.lastStatus = 'SHIPPED';
+    snap[fid] = prev;
+  });
+
+  if (events.length === 0) {
+    try { localStorage.setItem(KPI_SHIPPED_BACKFILL_KEY, new Date().toISOString()); } catch(e) {}
+    return;
+  }
+
+  // Persist snapshot BEFORE the network call so the subsequent
+  // kpiProcessOrders pass sees hasShipped=true and doesn't duplicate.
+  kpiSaveSnapshot(snap);
+
+  kpiSetStatus('syncing', `KPI: backfilling ${events.length} shipped`);
+  kpiSendEvents(events).then(ok => {
+    if (ok) {
+      try { localStorage.setItem(KPI_SHIPPED_BACKFILL_KEY, new Date().toISOString()); } catch(e) {}
+      kpiSetStatus('ok', `KPI: backfilled ${events.length} shipped`);
+    } else {
+      // Don't set the flag — let it retry on the next refresh.
+      kpiSetStatus('error', 'KPI: shipped backfill failed');
+    }
+  });
+}
+
 // Called from invFetchFromAPI on the unfiltered allOrders list, before the
 // org-picker filter is applied. Diffs against snapshot, sends new transitions.
 function kpiProcessOrders(allOrders) {
@@ -1513,11 +1594,12 @@ function kpiProcessOrders(allOrders) {
 
     if (isFirstSight) {
       // Order observed mid-lifecycle for the first time. The API gives us
-      // order.updatedAt — for SHIPPED orders that's effectively the ship time,
-      // so we backfill shipped_at from it. Item-level transitions don't expose
-      // an equivalent timestamp on the API, so at_facility is still marked
-      // "passed" silently to avoid stamping it with the wrong moment.
-      if (orderStatus === 'SHIPPED' && !prev.hasShipped) {
+      // order.updatedAt — for SHIPPED orders that's the ship time exactly;
+      // for PARTIALLY_RECEIVED / RECEIVED / COMPLETED it's an approximation
+      // (the latest status flip), but better than dropping the event. Item-
+      // level transitions don't expose an equivalent timestamp on the API,
+      // so at_facility is still marked "passed" silently when applicable.
+      if (SHIPPED_OR_LATER.has(orderStatus) && !prev.hasShipped) {
         events.push({
           friendly_order_id: fid,
           transition: 'shipped',
@@ -1528,8 +1610,10 @@ function kpiProcessOrders(allOrders) {
       }
       if (itemStatuses.includes('ARRIVED_AT_PROCESSING_FACILITY')) prev.hasAtFacility = true;
     } else {
-      // shipped — witnessed status flip
-      if (!prev.hasShipped && orderStatus === 'SHIPPED') {
+      // shipped — witnessed status flip. We accept any status at-or-past
+      // SHIPPED to handle the case where the order skipped past SHIPPED
+      // between two polls (e.g. ORDERED -> PARTIALLY_RECEIVED in one window).
+      if (!prev.hasShipped && SHIPPED_OR_LATER.has(orderStatus)) {
         events.push({
           friendly_order_id: fid,
           transition: 'shipped',
@@ -1669,6 +1753,18 @@ async function kpiFetchCompletedBackstop() {
         prev.hasOrdered = true;
         prev.hasShipped = true;       // suppress — we don't know when shipped
         prev.hasAtFacility = true;    // suppress — we don't know when arrived
+      } else if (!prev.hasShipped) {
+        // We saw this order live (so we have createdAt for ordered), but the
+        // SHIPPED window slipped between polls. updatedAt on a COMPLETED order
+        // is the completion timestamp, not the ship time, so this is an
+        // approximation — but logging it lets the KPI sheet see the leg at all.
+        events.push({
+          friendly_order_id: fid,
+          transition: 'shipped',
+          timestamp: order.updatedAt || new Date().toISOString(),
+          ...meta
+        });
+        prev.hasShipped = true;
       }
 
       // Completion timestamp from the API itself — this is the authoritative
@@ -2822,6 +2918,9 @@ async function invFetchFromAPI() {
     // KPI tracker — diff allOrders against snapshot and emit transition events
     // BEFORE the org-picker filter runs (we want lifecycle data for every order,
     // regardless of which org the user is viewing).
+    // The backfill runs first (one-time per browser) so the subsequent diff
+    // sees the updated snapshot and doesn't duplicate shipped events.
+    try { kpiBackfillCurrentlyShipped(allOrders); } catch (e) { console.error('KPI shipped backfill error:', e); }
     try { kpiProcessOrders(allOrders); } catch (e) { console.error('KPI tracker error:', e); }
 
     // Filter to selected orgs
