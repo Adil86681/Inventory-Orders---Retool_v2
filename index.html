@@ -759,6 +759,9 @@
   <button class="tab-btn" onclick="switchTab('kpi')" id="tabBtn-kpi">
     📊 Inbound KPI
   </button>
+  <button class="tab-btn" onclick="switchTab('grv')" id="tabBtn-grv">
+    💬 GRV Messaging
+  </button>
 </div>
 
 <!-- ═══ INVENTORY ORDERS TAB ═══ -->
@@ -1342,6 +1345,40 @@
 
 </div>
 </div>
+
+<!-- ═══ GRV MESSAGING TAB ═══ -->
+<div class="tab-panel" id="panel-grv">
+<div class="app">
+  <div class="page-header">
+    <div class="page-title">
+      <h1>GRV Messaging</h1>
+      <p>Coventry &amp; Dreiech — INS shipments pending item code response</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-primary" onclick="grvClearRows()">🗑 Clear</button>
+    </div>
+  </div>
+
+  <table class="data-table" id="grvTable">
+    <thead>
+      <tr>
+        <th>BOL</th>
+        <th>PO Number</th>
+        <th>Customer</th>
+        <th>Device Spec</th>
+        <th>Qty</th>
+        <th>MPN</th>
+        <th>Item Code + Description</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="grvTbody">
+      <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No data yet — ask Claude to populate from GRV</td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+
 
 <script>
 // ─── API CONFIG ──────────────────────────────────────────────────────────────
@@ -4057,6 +4094,52 @@ function switchTab(tab) {
   }
   // Products tab is load-on-demand — user clicks "Load" or "Refresh".
   // fbinv tab is upload-driven — no auto-load needed.
+}
+
+// ─── GRV MESSAGING ────────────────────────────────────────────────────────────
+function grvSetRows(rows) {
+  // rows: array of { bol, po, customer, spec, qty, mpn, itemCode, description }
+  const tbody = document.getElementById('grvTbody');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No INS rows found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => {
+    const itemDesc = [r.itemCode, r.description].filter(Boolean).join(' ');
+    const hasItem  = r.itemCode && r.description;
+    const hasMpn   = !!r.mpn;
+    const statusDot = hasItem  ? '<span style="color:var(--green)">●</span>' :
+                      hasMpn   ? '<span style="color:var(--amber)">●</span>' :
+                                 '<span style="color:var(--muted)">●</span>';
+    return \`<tr>
+      <td style="font-family:var(--mono);font-size:11px;">\${r.bol||'—'}</td>
+      <td style="font-family:var(--mono);font-size:12px;">\${r.po||'—'}</td>
+      <td><strong>\${r.customer||'—'}</strong></td>
+      <td style="font-size:12px;">\${r.spec||'—'}</td>
+      <td style="text-align:center;">\${r.qty||'—'}</td>
+      <td style="font-family:var(--mono);font-size:11px;">\${r.mpn||'<span style="color:var(--muted)">pending</span>'}</td>
+      <td style="font-family:var(--mono);font-size:11px;">\${hasItem ? itemDesc : '<span style="color:var(--muted)">pending</span>'}</td>
+      <td>\${statusDot} \${hasItem ? \`<button class="btn-copy" onclick="grvCopy(this, \${i})">Copy</button>\` : ''}</td>
+    </tr>\`;
+  }).join('');
+  // Store data for copy
+  window._grvRows = rows;
+}
+
+function grvCopy(btn, idx) {
+  const r = window._grvRows[idx];
+  const text = (r.itemCode||'') + ' ' + (r.description||'');
+  navigator.clipboard.writeText(text.trim()).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function grvClearRows() {
+  window._grvRows = [];
+  const tbody = document.getElementById('grvTbody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No data yet — ask Claude to populate from GRV</td></tr>';
 }
 
 // ─── ADIL'S DASHBOARD (embedded via iframe srcdoc) ────────────────────────────
