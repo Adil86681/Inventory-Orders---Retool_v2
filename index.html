@@ -1346,43 +1346,6 @@
 </div>
 </div>
 
-<!-- ═══ GRV MESSAGING TAB ═══ -->
-<div class="tab-panel" id="panel-grv">
-<div class="app">
-  <div class="page-header">
-    <div class="page-title">
-      <h1>GRV Messaging</h1>
-      <p>Coventry &amp; Dreiech — INS shipments pending item code response</p>
-    </div>
-    <div class="page-actions">
-      <button class="btn btn-primary" onclick="grvStartWarehouse('Coventry')" style="background:var(--blue,#4f6ef7);margin-right:8px;">▶ Start Coventry</button>
-      <button class="btn btn-primary" onclick="grvStartWarehouse('Dreiech')" style="background:var(--green,#22c55e);margin-right:8px;">▶ Start Dreiech</button>
-      <button class="btn" onclick="grvClearRows()" style="opacity:.6;">🗑 Clear</button>
-    </div>
-  </div>
-
-  <table class="data-table" id="grvTable">
-    <thead>
-      <tr>
-        <th>Warehouse</th>
-        <th>BOL</th>
-        <th>PO Number</th>
-        <th>Customer</th>
-        <th>Device Spec</th>
-        <th>Qty</th>
-        <th>MPN</th>
-        <th>Item Code + Description</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody id="grvTbody">
-      <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No data yet — ask Claude to populate from GRV</td></tr>
-    </tbody>
-  </table>
-</div>
-</div>
-
-
 <script>
 // ─── API CONFIG ──────────────────────────────────────────────────────────────
 const API_GRAPHQL_URL = '/api/graphql';  // Proxied through Node.js server (handles OAuth)
@@ -4099,76 +4062,6 @@ function switchTab(tab) {
   // fbinv tab is upload-driven — no auto-load needed.
 }
 
-// ─── GRV MESSAGING ────────────────────────────────────────────────────────────
-function grvStartWarehouse(warehouse) {
-  var msg = 'Run GRV ' + warehouse + ' workflow. '
-    + 'RULES: (1) Never close or navigate away from the GRV tab — open MGMT and Google Sheets in new tabs instead, otherwise the session expires and I have to log in again. '
-    + '(2) Only process INS rows with exactly 9-digit PO numbers. '
-    + '(3) Output should be a dated Excel file saved to the outputs folder.';
-  if (typeof window.sendPrompt === 'function') {
-    window.sendPrompt(msg);
-  } else {
-    navigator.clipboard.writeText(msg).then(function() {
-      var btn = event.currentTarget;
-      var orig = btn.textContent;
-      btn.textContent = '✓ Copied!';
-      setTimeout(function() { btn.textContent = orig; }, 2000);
-    }).catch(function() {
-      alert('Please type in Claude chat: ' + msg);
-    });
-  }
-}
-
-function grvSetRows(rows) {
-  // rows: array of { warehouse, bol, po, customer, spec, qty, mpn, itemCode, description }
-  const tbody = document.getElementById('grvTbody');
-  if (!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No INS rows found</td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map((r, i) => {
-    const itemDesc = [r.itemCode, r.description].filter(Boolean).join(' ');
-    const hasItem  = r.itemCode && r.description;
-    const hasMpn   = !!r.mpn;
-    const statusDot = hasItem  ? '<span style="color:var(--green)">&#9679;</span>' :
-                      hasMpn   ? '<span style="color:var(--amber)">&#9679;</span>' :
-                                 '<span style="color:var(--muted)">&#9679;</span>';
-    const copyBtn  = hasItem ? '<button class="btn-copy" onclick="grvCopy(this,' + i + ')">Copy</button>' : '';
-    const wh = r.warehouse || '—';
-    const whColor = wh === 'Coventry' ? 'var(--blue,#4f6ef7)' : wh === 'Dreiech' ? 'var(--green,#22c55e)' : 'var(--muted)';
-    const whBadge = '<span style="font-size:10px;font-weight:600;color:' + whColor + ';text-transform:uppercase;letter-spacing:.5px;">' + wh + '</span>';
-    return '<tr>' +
-      '<td style="white-space:nowrap;">' + whBadge + '</td>' +
-      '<td style="font-family:var(--mono);font-size:11px;">' + (r.bol||'—') + '</td>' +
-      '<td style="font-family:var(--mono);font-size:12px;">' + (r.po||'—') + '</td>' +
-      '<td><strong>' + (r.customer||'—') + '</strong></td>' +
-      '<td style="font-size:12px;">' + (r.spec||'—') + '</td>' +
-      '<td style="text-align:center;">' + (r.qty||'—') + '</td>' +
-      '<td style="font-family:var(--mono);font-size:11px;">' + (r.mpn||'<span style="color:var(--muted)">pending</span>') + '</td>' +
-      '<td style="font-family:var(--mono);font-size:11px;">' + (hasItem ? itemDesc : '<span style="color:var(--muted)">pending</span>') + '</td>' +
-      '<td>' + statusDot + ' ' + copyBtn + '</td>' +
-      '</tr>';
-  }).join('');
-  // Store data for copy
-  window._grvRows = rows;
-}
-
-function grvCopy(btn, idx) {
-  const r = window._grvRows[idx];
-  const text = (r.itemCode||'') + ' ' + (r.description||'');
-  navigator.clipboard.writeText(text.trim()).then(() => {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
-  });
-}
-
-function grvClearRows() {
-  window._grvRows = [];
-  const tbody = document.getElementById('grvTbody');
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">No data yet — ask Claude to populate from GRV</td></tr>';
-}
-
 // ─── ADIL'S DASHBOARD (embedded via iframe srcdoc) ────────────────────────────
 let adilLoaded = false;
 function adilLoadFrame() {
@@ -5607,4 +5500,135 @@ async function kdTrack(trackingCode, btnEl) {
       '<div class="kd-status-row"><span class="kd-badge ' + st.cls + '">' + st.label + '</span>' +
       '<span class="kd-carrier">' + carrier_name + '</span></div>' +
       '<div class="kd-latest-msg">' + msg + '</div>' +
-      '<div class="kd-
+      '<div class="kd-meta">' + (loc ? '<span>' + loc + '</span>' : '') + (upd ? '<span>' + upd + '</span>' : '') + '</div>' +
+      (items.length ? '<div class="kd-events-label">Tracking History (' + items.length + ' events)</div>' + evHtml : '');
+    if (btnEl) { btnEl.classList.remove('loading'); btnEl.textContent = '📍'; }
+  } catch(e) {
+    const isCors = e.name === 'TypeError';
+    body.innerHTML = '<div class="kd-error">' +
+      (isCors ? '⚠️ Browser blocked the request (CORS). A server-side proxy is needed.'
+              : '⚠️ ' + e.message) + '</div>';
+    if (btnEl) { btnEl.classList.remove('loading'); btnEl.textContent = '📍'; }
+  }
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+invLoadState();
+csLoadState();
+commentsLoad();
+invRenderAll();
+csRenderAll();
+
+setSyncStatus('syncing', 'Loading from API…');
+invFetchFromAPI();
+csFetchFromAPI();
+
+// Inject KD modal into DOM
+document.body.insertAdjacentHTML('beforeend',
+  '<div class="kd-overlay" id="kd-overlay" onclick="if(event.target===this)kdClose()">' +
+  '<div class="kd-modal">' +
+  '<div class="kd-modal-head">' +
+  '<div><div class="kd-modal-title">Live Shipment Status</div>' +
+  '<div class="kd-modal-num" id="kd-modal-num"></div></div>' +
+  '<button class="kd-close" onclick="kdClose()">&#x2715;</button>' +
+  '</div><div class="kd-modal-body" id="kd-modal-body"></div>' +
+  '</div></div>');
+
+// ─── GRV MESSAGING ──────────────────────────────────────────────────────────
+function grvStartWarehouse(warehouse) {
+  var msg = 'Run GRV ' + warehouse + ' workflow. '
+    + 'RULES: (1) Never close or navigate away from the GRV tab — open MGMT and Google Sheets in new tabs instead, otherwise the session expires and I have to log in again. '
+    + '(2) Only process INS rows with exactly 9-digit PO numbers. '
+    + '(3) Output should be a dated Excel file saved to the outputs folder.';
+  if (typeof window.sendPrompt === 'function') {
+    window.sendPrompt(msg);
+  } else {
+    navigator.clipboard.writeText(msg).then(function() {
+      var btn = event.currentTarget;
+      var orig = btn.textContent;
+      btn.textContent = '\u2713 Copied!';
+      setTimeout(function() { btn.textContent = orig; }, 2000);
+    }).catch(function() {
+      alert('Paste into Claude chat: ' + msg);
+    });
+  }
+}
+
+function grvSetRows(rows) {
+  var tbody = document.getElementById('grvTbody');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">No INS rows found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r, i) {
+    var itemDesc = [r.itemCode, r.description].filter(Boolean).join(' ');
+    var hasItem  = r.itemCode && r.description;
+    var hasMpn   = !!r.mpn;
+    var dot = hasItem ? '<span style="color:var(--green,#22c55e)">&#9679;</span>'
+            : hasMpn  ? '<span style="color:var(--amber,#f59e0b)">&#9679;</span>'
+                      : '<span style="color:var(--muted)">&#9679;</span>';
+    var copy = hasItem ? '<button class="btn-copy" onclick="grvCopy(this,' + i + ')">Copy</button>' : '';
+    var wh = r.warehouse || '—';
+    var whC = wh === 'Coventry' ? '#4f6ef7' : wh === 'Dreiech' ? '#22c55e' : '#999';
+    var whB = '<span style="font-size:10px;font-weight:700;color:' + whC + ';text-transform:uppercase;">' + wh + '</span>';
+    return '<tr>'
+      + '<td>' + whB + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px;">' + (r.bol||'—') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:12px;">' + (r.po||'—') + '</td>'
+      + '<td><strong>' + (r.customer||'—') + '</strong></td>'
+      + '<td style="font-size:12px;">' + (r.spec||'—') + '</td>'
+      + '<td style="text-align:center;">' + (r.qty||'—') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px;">' + (r.mpn||'<em style="color:var(--muted)">pending</em>') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px;">' + (hasItem ? itemDesc : '<em style="color:var(--muted)">pending</em>') + '</td>'
+      + '<td>' + dot + ' ' + copy + '</td>'
+      + '</tr>';
+  }).join('');
+  window._grvRows = rows;
+}
+
+function grvCopy(btn, idx) {
+  var r = window._grvRows[idx];
+  var text = ((r.itemCode||'') + ' ' + (r.description||'')).trim();
+  navigator.clipboard.writeText(text).then(function() {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+  });
+}
+
+function grvClearRows() {
+  window._grvRows = [];
+  var tbody = document.getElementById('grvTbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Click &#9654; Start to run the workflow</td></tr>';
+}
+</script>
+
+<!-- ═══ GRV MESSAGING TAB ═══ -->
+<div class="tab-panel" id="panel-grv">
+<div class="app">
+  <div class="page-header">
+    <div class="page-title">
+      <h1>GRV Messaging</h1>
+      <p>Coventry &amp; Dreiech — INS shipments, 9-digit POs only</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-primary" onclick="grvStartWarehouse('Coventry')" style="background:var(--blue,#4f6ef7);margin-right:8px;">&#9654; Start Coventry</button>
+      <button class="btn btn-primary" onclick="grvStartWarehouse('Dreiech')" style="background:var(--green,#22c55e);margin-right:8px;">&#9654; Start Dreiech</button>
+      <button class="btn" onclick="grvClearRows()" style="opacity:.6;">&#128465; Clear</button>
+    </div>
+  </div>
+  <table class="data-table" id="grvTable">
+    <thead>
+      <tr>
+        <th>Warehouse</th><th>BOL</th><th>PO Number</th><th>Customer</th>
+        <th>Device Spec</th><th>Qty</th><th>MPN</th>
+        <th>Item Code + Description</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="grvTbody">
+      <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;font-family:var(--mono);font-size:12px;">Click &#9654; Start to run the workflow</td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+</body>
+</html>
