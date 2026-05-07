@@ -4108,19 +4108,20 @@ function grvSetRows(rows) {
     const itemDesc = [r.itemCode, r.description].filter(Boolean).join(' ');
     const hasItem  = r.itemCode && r.description;
     const hasMpn   = !!r.mpn;
-    const statusDot = hasItem  ? '<span style="color:var(--green)">●</span>' :
-                      hasMpn   ? '<span style="color:var(--amber)">●</span>' :
-                                 '<span style="color:var(--muted)">●</span>';
-    return \`<tr>
-      <td style="font-family:var(--mono);font-size:11px;">\${r.bol||'—'}</td>
-      <td style="font-family:var(--mono);font-size:12px;">\${r.po||'—'}</td>
-      <td><strong>\${r.customer||'—'}</strong></td>
-      <td style="font-size:12px;">\${r.spec||'—'}</td>
-      <td style="text-align:center;">\${r.qty||'—'}</td>
-      <td style="font-family:var(--mono);font-size:11px;">\${r.mpn||'<span style="color:var(--muted)">pending</span>'}</td>
-      <td style="font-family:var(--mono);font-size:11px;">\${hasItem ? itemDesc : '<span style="color:var(--muted)">pending</span>'}</td>
-      <td>\${statusDot} \${hasItem ? \`<button class="btn-copy" onclick="grvCopy(this, \${i})">Copy</button>\` : ''}</td>
-    </tr>\`;
+    const statusDot = hasItem  ? '<span style="color:var(--green)">&#9679;</span>' :
+                      hasMpn   ? '<span style="color:var(--amber)">&#9679;</span>' :
+                                 '<span style="color:var(--muted)">&#9679;</span>';
+    const copyBtn  = hasItem ? '<button class="btn-copy" onclick="grvCopy(this,' + i + ')">Copy</button>' : '';
+    return '<tr>' +
+      '<td style="font-family:var(--mono);font-size:11px;">' + (r.bol||'—') + '</td>' +
+      '<td style="font-family:var(--mono);font-size:12px;">' + (r.po||'—') + '</td>' +
+      '<td><strong>' + (r.customer||'—') + '</strong></td>' +
+      '<td style="font-size:12px;">' + (r.spec||'—') + '</td>' +
+      '<td style="text-align:center;">' + (r.qty||'—') + '</td>' +
+      '<td style="font-family:var(--mono);font-size:11px;">' + (r.mpn||'<span style="color:var(--muted)">pending</span>') + '</td>' +
+      '<td style="font-family:var(--mono);font-size:11px;">' + (hasItem ? itemDesc : '<span style="color:var(--muted)">pending</span>') + '</td>' +
+      '<td>' + statusDot + ' ' + copyBtn + '</td>' +
+      '</tr>';
   }).join('');
   // Store data for copy
   window._grvRows = rows;
