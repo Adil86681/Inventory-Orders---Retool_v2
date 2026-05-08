@@ -2916,24 +2916,40 @@ async function invFetchFromAPI() {
       return json.data?.getInventoryOrdersPaginated;
     };
 
-    // Fetch page 1 to discover total pages, then fire all remaining pages in parallel
-    const firstPage = await invFetchPage(1);
+    // Fetch page 1 to discover total pages. Pages are sorted createdAt DESC,
+    // so once we hit a page whose first order is older than KPI_CUTOFF_ISO,
+    // every subsequent page is also out-of-window — we can stop early.
+    // We fetch sequentially (not parallel) so we can break the moment we
+    // cross the cutoff. Filtering is also applied per-page so straggler
+    // pre-cutoff rows on the boundary page don't leak into allOrders.
+    const firstPage  = await invFetchPage(1);
     const totalPages = firstPage?.totalPages || 1;
-    const allOrders = [...(firstPage?.data || [])];
+    const allOrders  = [];
 
-    if (totalPages > 1) {
-      setSyncStatus('syncing', `Fetching all ${totalPages} pages in parallel…`);
-      let done = 1;
-      const rest = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, i) => 
-          invFetchPage(i + 2).then(p => { 
-            done++;
-            setSyncStatus('syncing', `Loading ${done}/${totalPages} pages…`);
-            return p;
-          })
-        )
-      );
-      rest.forEach(page => allOrders.push(...(page?.data || [])));
+    function appendInWindow(page) {
+      const data = page?.data || [];
+      let crossedCutoff = false;
+      for (const o of data) {
+        if (typeof o.createdAt === 'string' && o.createdAt >= KPI_CUTOFF_ISO) {
+          allOrders.push(o);
+        } else {
+          crossedCutoff = true;
+        }
+      }
+      // Crossed-cutoff means this page contains the boundary; subsequent
+      // pages are entirely older, so the caller should stop fetching.
+      return crossedCutoff;
+    }
+
+    let stop = appendInWindow(firstPage);
+    if (!stop && totalPages > 1) {
+      setSyncStatus('syncing', `Loading 1/${totalPages} pages…`);
+      for (let pageNumber = 2; pageNumber <= totalPages; pageNumber++) {
+        const page = await invFetchPage(pageNumber);
+        stop = appendInWindow(page);
+        setSyncStatus('syncing', `Loading ${pageNumber}/${totalPages} pages…`);
+        if (stop) break;
+      }
     }
 
     // Transform API response to internal format
