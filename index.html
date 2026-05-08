@@ -1415,6 +1415,18 @@ function manualRefresh() {
 
 const KPI_SNAPSHOT_KEY = 'kpi_tracker_snapshot_v1';
 
+// Cutoff — the KPI tracker ignores orders created before this date. Prevents
+// long-stale orders (e.g. abandoned 2024/2025 records still sitting at an
+// in-flight status) from being processed and written to the sheet. Bump this
+// at the start of each calendar year if you want to keep things tight.
+const KPI_CUTOFF_ISO = '2026-01-01T00:00:00Z';
+function isWithinKpiWindow(order) {
+  // createdAt is the immutable order birthday — the right field to gate on.
+  // Missing createdAt -> exclude (defensive).
+  const t = order && order.createdAt;
+  return typeof t === 'string' && t >= KPI_CUTOFF_ISO;
+}
+
 // Statuses that imply the order has already shipped. Used to backfill the
 // 'shipped' transition when we observe an order at a status past SHIPPED
 // (because the live poll missed the brief SHIPPED window).
@@ -1539,6 +1551,7 @@ function kpiBackfillCurrentlyShipped(allOrders) {
   const events = [];
 
   allOrders.forEach(order => {
+    if (!isWithinKpiWindow(order)) return;
     if (order.status !== 'SHIPPED') return;
     const wh = order.warehouse?.name || '';
     if (isBlockedWarehouse(wh)) return;
@@ -1607,6 +1620,7 @@ function kpiProcessOrders(allOrders) {
   const seenFids = new Set();
 
   allOrders.forEach(order => {
+    if (!isWithinKpiWindow(order)) return;
     const fid = order.friendlyOrderId || order.id;
     const wh = order.warehouse?.name || '';
     if (isBlockedWarehouse(wh)) return;
@@ -1824,6 +1838,7 @@ async function kpiFetchCompletedBackstop() {
       const eventsBefore = events.length;
 
       completed.forEach(order => {
+        if (!isWithinKpiWindow(order)) return;
         const fid = order.friendlyOrderId || order.id;
         const wh  = order.warehouse?.name || '';
         if (isBlockedWarehouse(wh)) return;
