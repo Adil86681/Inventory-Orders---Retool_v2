@@ -817,6 +817,7 @@
         <label class="ms-option"><input type="checkbox" value="SHIPPED" onchange="invRenderTable()"> Shipped</label>
         <label class="ms-option"><input type="checkbox" value="ARRIVED_AT_PROCESSING_FACILITY" onchange="invRenderTable()"> At Facility</label>
         <label class="ms-option"><input type="checkbox" value="PARTIALLY_RECEIVED" onchange="invRenderTable()"> Partially Received</label>
+        <label class="ms-option"><input type="checkbox" value="RECEIVED" onchange="invRenderTable()"> Received</label>
       </div>
     </div>
   </div>
@@ -1419,6 +1420,12 @@ const KPI_SNAPSHOT_KEY = 'kpi_tracker_snapshot_v1';
 // (because the live poll missed the brief SHIPPED window).
 const SHIPPED_OR_LATER = new Set(['SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED']);
 
+// Statuses that mean "the order is done" for KPI purposes. Per the platform's
+// semantics, 'RECEIVED' means received-on-platform — i.e. the same business
+// outcome as 'COMPLETED'. Both terminate the lifecycle and should fill in
+// completed_at on the sheet.
+const COMPLETED_STATUSES = new Set(['RECEIVED', 'COMPLETED']);
+
 // Item- and order-level statuses that imply the order has already reached the
 // processing facility. Used to fire the 'at_facility' transition when an item
 // skipped past ARRIVED_AT_PROCESSING_FACILITY between two polls (e.g. SHIPPED
@@ -1427,7 +1434,7 @@ const SHIPPED_OR_LATER = new Set(['SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED', '
 // the original AT_FACILITY detection, since the API doesn't expose a per-item
 // arrival time.
 const AT_FACILITY_OR_LATER_ITEM  = new Set(['ARRIVED_AT_PROCESSING_FACILITY', 'PARTIALLY_RECEIVED', 'RECEIVED']);
-const AT_FACILITY_OR_LATER_ORDER = new Set(['PARTIALLY_RECEIVED', 'COMPLETED']);
+const AT_FACILITY_OR_LATER_ORDER = new Set(['PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED']);
 function reachedFacility(itemStatuses, orderStatus) {
   if (orderStatus && AT_FACILITY_OR_LATER_ORDER.has(orderStatus)) return true;
   return itemStatuses.some(s => AT_FACILITY_OR_LATER_ITEM.has(s));
@@ -1677,6 +1684,21 @@ function kpiProcessOrders(allOrders) {
       }
     }
 
+    // 'RECEIVED' (received on platform) is semantically equivalent to
+    // 'COMPLETED' for KPI purposes. The API's order.updatedAt is the moment
+    // of the status flip, so it's the authoritative completion timestamp.
+    // We log this on every poll the order is seen at this status — guarded
+    // by !prev.hasCompleted so it only emits once.
+    if (!prev.hasCompleted && COMPLETED_STATUSES.has(orderStatus)) {
+      events.push({
+        friendly_order_id: fid,
+        transition: 'completed',
+        timestamp: order.updatedAt || new Date().toISOString(),
+        ...meta
+      });
+      prev.hasCompleted = true;
+    }
+
     prev.lastStatus = orderStatus;
     // Persist the latest meta on the snapshot so the 'completed by absence'
     // branch below (where the order has dropped out of the API window) can
@@ -1796,7 +1818,7 @@ async function kpiFetchCompletedBackstop() {
       if (json.errors) { console.error('KPI backstop GraphQL errors:', json.errors); break; }
 
       const data      = json.data?.getInventoryOrdersPaginated?.data || [];
-      const completed = data.filter(o => o.status === 'COMPLETED');
+      const completed = data.filter(o => COMPLETED_STATUSES.has(o.status));
       pagesWalked++;
 
       const eventsBefore = events.length;
@@ -2869,7 +2891,7 @@ async function invFetchFromAPI() {
           query: invGqlQuery,
           variables: {
             paging: { pageNumber, pageSize, sort: [{ field: 'createdAt', direction: 'DESC' }] },
-            filter: { statuses: ['ORDERED', 'PROCESSING', 'SHIPPED', 'PARTIALLY_RECEIVED'], firstbaseSupplied: true }
+            filter: { statuses: ['ORDERED', 'PROCESSING', 'SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED'], firstbaseSupplied: true }
           }
         })
       });
