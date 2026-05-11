@@ -2224,7 +2224,7 @@ function kpiRenderCards(rows) {
     });
     const sloMetCount = sloEvalRows.filter(r => cfg.sloMet(r, cfg.getValue(r)) === 'yes').length;
     const sloEval = sloEvalRows.length;
-    const sloPct = sloEval > 0 ? Math.round((sloMetCount / sloEval) * 100) : null;
+    const sloPct = sloEval > 0 ? ((sloMetCount / sloEval) * 100).toFixed(2) : null;
 
     setText('kpiLbl-slo', '% SLO Met');
     setText('kpiVal-slo', sloPct === null ? '—' : sloPct + '%');
