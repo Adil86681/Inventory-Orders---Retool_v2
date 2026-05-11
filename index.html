@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<style>:root { color-scheme: light; }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inbound Order Tracker — Live</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Google Fonts removed for artifact compatibility; system fonts used -->
 <style>
   :root {
     --bg:       #f0f2f5;
@@ -728,7 +729,7 @@
 </style>
 
 <!-- Chart.js for the Inbound KPI dashboard -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -5643,12 +5644,24 @@ document.body.insertAdjacentHTML('beforeend',
   '</div><div class="kd-modal-body" id="kd-modal-body"></div>' +
   '</div></div>');
 
-// ─── GRV MESSAGING ──────────────────────────────────────────────────────────
+// ─── GRV MESSAGING ────────────────────────────────────────────────
 function grvStartWarehouse(warehouse) {
-  var msg = 'Run GRV ' + warehouse + ' workflow. '
-    + 'RULES: (1) Never close or navigate away from the GRV tab — open MGMT and Google Sheets in new tabs instead, otherwise the session expires and I have to log in again. '
-    + '(2) Only process INS rows with exactly 9-digit PO numbers. '
-    + '(3) Output should be a dated Excel file saved to the outputs folder.';
+  var msg = 'Run GRV ' + warehouse + ' workflow.\n\n'
+    + 'RULES:\n'
+    + '(1) Never close or navigate away from the GRV tab — open all other systems in new tabs, otherwise the session expires and the user will need to log in again.\n'
+    + '(2) Only process INS rows with exactly 9-digit PO numbers.\n'
+    + '(3) Output should be a dated Excel file saved to the outputs folder with columns: PO Number | Customer | MPN | Item Code | Description.\n\n'
+    + 'STEPS:\n'
+    + '1. Open https://geodis-reverse-visibility.extranet.geodis.org/customers in a NEW TAB. '
+    + 'The first time this is opened, pause and notify the user that they need to log in before you proceed.\n'
+    + '2. Navigate to the ' + warehouse + ' warehouse view.\n'
+    + '3. Read all rows where the Owner Code column = "INS". From those, keep only rows where the PO number is exactly 9 digits. Note the PO Number and Customer for each qualifying row.\n'
+    + '4. Open https://mgmt.firstbasehq.com/platform/inventory_orders in a NEW TAB. '
+    + 'For each qualifying PO number, search for it and record the MPN shown.\n'
+    + '5. Open https://docs.google.com/spreadsheets/d/1iN9TeaadP4UPqOUrvUKRRkD4-CK3CLNncYQ-Xl2ohck/edit#gid=1220759584 in a NEW TAB. '
+    + 'For each MPN recorded, search for it in this sheet and retrieve the Item Code and Description.\n'
+    + '6. Compile all results into a dated Excel file (filename: GRV_' + warehouse + '_YYYY-MM-DD.xlsx) and save to the outputs folder. '
+    + 'Columns: PO Number | Customer | MPN | Item Code | Description.';
   if (typeof window.sendPrompt === 'function') {
     window.sendPrompt(msg);
   } else {
