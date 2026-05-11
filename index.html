@@ -1275,10 +1275,15 @@
           <div class="kpi-chart-title" id="kpiTrendTitle">Weekly trend</div>
           <div class="kpi-chart-subtitle" id="kpiTrendSubtitle">Shipments received per week, split by in-SLO vs out-of-SLO</div>
         </div>
-        <select id="kpiTrendGranularity" onchange="kpiDashRender()" style="align-self:center;">
-          <option value="week" selected>Weekly</option>
-          <option value="month">Monthly</option>
-        </select>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="kpiTrendWh" onchange="kpiDashRender()" style="align-self:center;">
+            <option value="">All warehouses</option>
+          </select>
+          <select id="kpiTrendGranularity" onchange="kpiDashRender()" style="align-self:center;">
+            <option value="week" selected>Weekly</option>
+            <option value="month">Monthly</option>
+          </select>
+        </div>
       </div>
       <div class="kpi-chart-canvas-wrap"><canvas id="kpiTrendChart"></canvas></div>
     </div>
@@ -2029,13 +2034,23 @@ async function kpiDashLoad() {
 }
 
 function kpiDashPopulateWarehouseFilter() {
-  const sel = document.getElementById('kpiWh');
-  if (!sel) return;
-  const current = sel.value;
   const warehouses = [...new Set(kpiDashRows.map(r => r.warehouse).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">All warehouses</option>' +
-    warehouses.map(w => `<option value="${escapeHTML(w)}">${escapeHTML(w)}</option>`).join('');
-  if (current && warehouses.includes(current)) sel.value = current;
+  // Top-level warehouse filter
+  const sel = document.getElementById('kpiWh');
+  if (sel) {
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All warehouses</option>' +
+      warehouses.map(w => `<option value="${escapeHTML(w)}">${escapeHTML(w)}</option>`).join('');
+    if (current && warehouses.includes(current)) sel.value = current;
+  }
+  // Trend chart warehouse filter
+  const trendSel = document.getElementById('kpiTrendWh');
+  if (trendSel) {
+    const current = trendSel.value;
+    trendSel.innerHTML = '<option value="">All warehouses</option>' +
+      warehouses.map(w => `<option value="${escapeHTML(w)}">${escapeHTML(w)}</option>`).join('');
+    if (current && warehouses.includes(current)) trendSel.value = current;
+  }
 }
 
 function kpiParseDate(v) {
@@ -2255,21 +2270,27 @@ function kpiRenderTrendChart(rows) {
   const granularity = (document.getElementById('kpiTrendGranularity') || {}).value || 'week';
   const isMonth = granularity === 'month';
 
+  // Trend-chart-specific warehouse filter
+  const trendWh = (document.getElementById('kpiTrendWh') || {}).value || '';
+  if (trendWh) rows = rows.filter(r => (r.warehouse || '') === trendWh);
+
   const cfg = kpiGetLegConfig();
 
-  // Update card title/subtitle to reflect granularity AND leg type
+  // Update card title/subtitle to reflect granularity, warehouse, and leg type
   const titleEl = document.getElementById('kpiTrendTitle');
   const subEl   = document.getElementById('kpiTrendSubtitle');
+  const whLabel = trendWh ? trendWh.replace('Warehouse - ', '') : null;
   if (titleEl) titleEl.textContent = isMonth ? 'Monthly trend' : 'Weekly trend';
   if (subEl) {
+    const whPart = whLabel ? ` · ${whLabel}` : '';
     if (cfg.hasSlo) {
-      subEl.textContent = isMonth
+      subEl.textContent = (isMonth
         ? 'Shipments received per month, split by in-SLO vs out-of-SLO'
-        : 'Shipments received per week, split by in-SLO vs out-of-SLO';
+        : 'Shipments received per week, split by in-SLO vs out-of-SLO') + whPart;
     } else {
-      subEl.textContent = isMonth
+      subEl.textContent = (isMonth
         ? 'Shipments arrived at facility per month'
-        : 'Shipments arrived at facility per week';
+        : 'Shipments arrived at facility per week') + whPart;
     }
   }
 
