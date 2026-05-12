@@ -5947,26 +5947,48 @@ function grvClearRows() {
   };
 
   // ── Orders ────────────────────────────────────────────────────────────────
+  // Uses getInventoryOrdersPaginated (broader access) instead of
+  // getOrganizationById.orders, which returns "Access Denied" for some roles.
+  // Filters client-side by organization.id and stops once we cross the
+  // 24-month window (orders are sorted createdAt DESC).
   async function caLoadOrders() {
     const orgId = caOrgId;
     try {
-      let all = [], page = 1, totalPages = 1;
-      while (page <= totalPages && page <= 15) {
+      // 24-month cutoff (matches the chart window below)
+      const cutoff = new Date();
+      cutoff.setDate(1);
+      cutoff.setMonth(cutoff.getMonth() - 23);
+      cutoff.setHours(0, 0, 0, 0);
+      const cutoffIso = cutoff.toISOString();
+
+      let all = [], page = 1, totalPages = 1, crossedCutoff = false;
+      const MAX_PAGES = 40; // safety cap (40 * 250 = 10,000 orders)
+      const PAGE_SIZE = 250;
+      while (page <= totalPages && page <= MAX_PAGES && !crossedCutoff) {
         const data = await gql(
-          `query($orgId:ID!,$pn:Int!,$ps:Int!,$f:OrderFilter){
-             getOrganizationById(orgId:$orgId){
-               orders(pagingAndSorting:{pageNumber:$pn,pageSize:$ps,sort:{field:"createdAt",direction:DESC}} filter:$f){
-                 totalElements totalPages
-                 data{id orderStatus createdAt}
-               }
+          `query($paging:PagingAndSorting!,$filter:InventoryOrderFilter){
+             getInventoryOrdersPaginated(pagingAndSorting:$paging, filter:$filter){
+               totalElements totalPages
+               data{ id status createdAt organization{ id } }
              }
            }`,
-          { orgId, pn: page, ps: 200, f: { types: ['ORDER'], searchString: '' } }
+          {
+            paging: { pageNumber: page, pageSize: PAGE_SIZE, sort: [{ field: 'createdAt', direction: 'DESC' }] },
+            filter: {}
+          }
         );
-        const o = data?.getOrganizationById?.orders;
+        const o = data?.getInventoryOrdersPaginated;
         if (!o) break;
         totalPages = o.totalPages || 1;
-        all = all.concat(o.data || []);
+        const rows = o.data || [];
+        // Filter to this org; stop early once we pass the 24-month cutoff
+        for (const r of rows) {
+          if (typeof r.createdAt === 'string' && r.createdAt < cutoffIso) {
+            crossedCutoff = true;
+            continue;
+          }
+          if (r.organization?.id === orgId) all.push(r);
+        }
         page++;
       }
       if (caOrgId !== orgId) return; // client changed
