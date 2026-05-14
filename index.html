@@ -14,23 +14,23 @@
 <!-- Google Fonts removed for artifact compatibility; system fonts used -->
 <style>
   :root {
-    --bg:       #f0f2f5;
-    --surface:  #ffffff;
-    --surface2: #f7f8fa;
-    --surface3: #eef0f4;
-    --border:   #d8dce6;
-    --border2:  #c4c9d6;
-    --navy:     #ffffff;
-    --accent:   #3d6fff;
-    --accent2:  #2b5be0;
-    --green:    #16a34a;
-    --green-dim:#15803d;
-    --amber:    #d97706;
-    --red:      #dc2626;
-    --purple:   #7c3aed;
-    --text:     #1a1d2e;
-    --text2:    #4a5068;
-    --muted:    #7a8198;
+    --bg:       #ede8dd;
+    --surface:  #f6f2e8;
+    --surface2: #f1ece0;
+    --surface3: #e8e2d4;
+    --border:   #d6cfbf;
+    --border2:  #c4bba5;
+    --navy:     #f6f2e8;
+    --accent:   #4d6fa8;
+    --accent2:  #3a5a91;
+    --green:    #4a7c4a;
+    --green-dim:#3f6b3f;
+    --amber:    #b67a2a;
+    --red:      #b34141;
+    --purple:   #6b5b95;
+    --text:     #2a2620;
+    --text2:    #4f4838;
+    --muted:    #8a826e;
     --mono:     'JetBrains Mono', monospace;
     --sans:     'Inter', sans-serif;
   }
@@ -859,14 +859,14 @@
   body.signed-in   > #clerk-auth-screen        { display: none !important; }
   #clerk-auth-screen {
     position: fixed; inset: 0; z-index: 9999;
-    background: #f0f2f5;
+    background: #ede8dd;
     display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 20px;
     font-family: \'Inter\', system-ui, sans-serif;
   }
   #clerk-auth-screen .auth-brand {
     font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
-    text-transform: uppercase; color: #1a1d2e;
+    text-transform: uppercase; color: #2a2620;
     display: flex; align-items: center; gap: 8px;
   }
   #clerk-auth-screen .auth-brand-dot {
@@ -874,7 +874,7 @@
     background: #3d6fff; box-shadow: 0 0 8px #3d6fff;
   }
   #clerk-auth-screen .auth-loading {
-    font-size: 12px; color: #7a8198; font-family: \'JetBrains Mono\', monospace;
+    font-size: 12px; color: #8a826e; font-family: \'JetBrains Mono\', monospace;
   }
   #clerk-sign-in-mount { min-width: 360px; }
   #user-button-slot { display: inline-flex; align-items: center; }
@@ -982,7 +982,7 @@
       <div class="ms-dropdown" id="inv-warehouseMenu"></div>
     </div>
     <div class="ms-wrap" id="inv-categoryWrap">
-      <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Brands" onclick="msToggle('inv-categoryMenu', this)">All Brands</button>
+      <button class="ms-trigger" id="inv-categoryTrigger" data-all-label="All Categories" onclick="msToggle('inv-categoryMenu', this)">All Categories</button>
       <div class="ms-dropdown" id="inv-categoryMenu"></div>
     </div>
     <div class="ms-wrap" id="inv-customerWrap">
@@ -1061,8 +1061,15 @@
       <button class="ms-trigger" id="cs-warehouseTrigger" data-all-label="All Warehouses" onclick="msToggle('cs-warehouseMenu', this)">All Warehouses</button>
       <div class="ms-dropdown" id="cs-warehouseMenu"></div>
     </div>
+    <div class="ms-wrap" id="cs-conditionWrap">
+      <button class="ms-trigger" id="cs-conditionTrigger" data-all-label="All Conditions" onclick="msToggle('cs-conditionMenu', this)">All Conditions</button>
+      <div class="ms-dropdown" id="cs-conditionMenu">
+        <label class="ms-option"><input type="checkbox" value="NEW" onchange="csRenderTable()"> New</label>
+        <label class="ms-option"><input type="checkbox" value="USED" onchange="csRenderTable()"> Used</label>
+      </div>
+    </div>
     <div class="ms-wrap" id="cs-categoryWrap">
-      <button class="ms-trigger" id="cs-categoryTrigger" data-all-label="All Brands" onclick="msToggle('cs-categoryMenu', this)">All Brands</button>
+      <button class="ms-trigger" id="cs-categoryTrigger" data-all-label="All Categories" onclick="msToggle('cs-categoryMenu', this)">All Categories</button>
       <div class="ms-dropdown" id="cs-categoryMenu"></div>
     </div>
     <div class="ms-wrap" id="cs-customerWrap">
@@ -1093,6 +1100,7 @@
           <col style="width:130px"><!-- Copy -->
           <col style="width:60px"><!-- Qty -->
           <col style="width:130px"><!-- Warehouse -->
+          <col style="width:100px"><!-- Condition -->
           <col style="width:130px"><!-- PO Number -->
           <col style="width:130px"><!-- Tracking -->
           <col style="width:110px"><!-- Status -->
@@ -1106,6 +1114,7 @@
           <th>Copy</th>
           <th onclick="csSortBy('totalQty')">Qty</th>
           <th onclick="csSortBy('warehouse')">Warehouse</th>
+          <th onclick="csSortBy('condition')">Condition</th>
           <th onclick="csSortBy('po_number')">PO Number</th>
           <th>Tracking</th>
           <th onclick="csSortBy('appStatus')">Status</th>
@@ -3194,6 +3203,7 @@ async function invFetchFromAPI() {
       const items = (order.inventoryOrderItems || []).map(item => ({
         order_item_id: item.id || '',
         brand: item.sku?.vendor?.name || '',
+        category: item.sku?.category?.nameSingular || '',
         product_title: item.sku?.skuInformation?.productTitle || '',
         quantity: item.quantity || 0,
         unit_price: '',
@@ -3399,7 +3409,7 @@ function invLoadSelected() {
 function invUpdateFilters() {
   const whs = [...new Set(Object.values(invOrders).map(o => o.warehouse).filter(w => w && !isBlockedWarehouseINV(w)))].sort();
   msPopulateDynamic('inv-warehouseMenu', 'inv-warehouseTrigger', whs, 'All Warehouses');
-  const cats = [...new Set(Object.values(invOrders).flatMap(o => o.items.map(it => it.brand)).filter(Boolean))].sort();
+  const cats = [...new Set(Object.values(invOrders).flatMap(o => o.items.map(it => it.category)).filter(Boolean))].sort();
   msPopulateDynamic('inv-categoryMenu', 'inv-categoryTrigger', cats, 'All Categories');
   const custs = [...new Set(Object.values(invOrders).map(o => o.organization).filter(Boolean))].sort();
   msPopulateDynamic('inv-customerMenu', 'inv-customerTrigger', custs, 'All Customers');
@@ -3417,7 +3427,7 @@ function invGetFiltered() {
     if (selOrgs.length && !selOrgs.includes(o.organization)) return false;
     if (whs.length   && !whs.includes(o.warehouse))     return false;
     if (custs.length && !custs.includes(o.organization)) return false;
-    if (cats.length  && !o.items.some(it => cats.includes(it.brand))) return false;
+    if (cats.length  && !o.items.some(it => cats.includes(it.category))) return false;
     if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) {
       const hay = [o.friendly_order_id, o.organization, o.warehouse, o.po_number,
@@ -3709,21 +3719,23 @@ function csUnreceive(fid) {
 function csUpdateFilters() {
   const whs = [...new Set(Object.values(csOrders).map(o => o.warehouse).filter(w => w && !isBlockedWarehouseCS(w)))].sort();
   msPopulateDynamic('cs-warehouseMenu', 'cs-warehouseTrigger', whs, 'All Warehouses');
-  const cats = [...new Set(Object.values(csOrders).flatMap(o => (o.items||[]).map(it => it.brand)).filter(Boolean))].sort();
-  msPopulateDynamic('cs-categoryMenu', 'cs-categoryTrigger', cats, 'All Brands');
+  const cats = [...new Set(Object.values(csOrders).flatMap(o => (o.items||[]).map(it => it.category)).filter(Boolean))].sort();
+  msPopulateDynamic('cs-categoryMenu', 'cs-categoryTrigger', cats, 'All Categories');
   const custs = [...new Set(Object.values(csOrders).map(o => o.organization).filter(Boolean))].sort();
   msPopulateDynamic('cs-customerMenu', 'cs-customerTrigger', custs, 'All Customers');
 }
 function csGetFiltered() {
   const search=document.getElementById('cs-search').value.toLowerCase();
   const whs=[...document.querySelectorAll('#cs-warehouseMenu input:checked')].map(c=>c.value);
+  const conds=[...document.querySelectorAll('#cs-conditionMenu input:checked')].map(c=>c.value);
   const cats=[...document.querySelectorAll('#cs-categoryMenu input:checked')].map(c=>c.value);
   const custs=[...document.querySelectorAll('#cs-customerMenu input:checked')].map(c=>c.value);
   const checked=[...document.querySelectorAll('#cs-statusMenu input:checked')].map(c=>c.value);
   return Object.values(csOrders).filter(o=>{
     if (isBlockedWarehouseCS(o.warehouse))               return false;
     if (whs.length   && !whs.includes(o.warehouse))      return false;
-    if (cats.length  && !cats.some(c => (o.items||[]).some(it => it.brand === c))) return false;
+    if (conds.length && !conds.includes(String(o.condition||'').toUpperCase())) return false;
+    if (cats.length  && !cats.some(c => (o.items||[]).some(it => it.category === c))) return false;
     if (custs.length && !custs.includes(o.organization))  return false;
     if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) { const hay=[o.organization,o.product_title,o.warehouse,o.po_number,o.friendly_order_id].join(' ').toLowerCase(); if(!hay.includes(search)) return false; }
@@ -3760,6 +3772,16 @@ const CS_STATUS_LABELS = {
   'CANCELLED': 'Cancelled',
   'RECEIVED': 'Received in WH'
 };
+
+function csCondBadge(raw) {
+  if (!raw) return '<span class="fbinv-badge fbinv-badge-other">—</span>';
+  const s = String(raw).toUpperCase();
+  let cls = 'fbinv-badge-other';
+  if (s === 'NEW')       cls = 'fbinv-badge-good';
+  else if (s === 'USED') cls = 'fbinv-badge-pending';
+  const label = s.charAt(0) + s.slice(1).toLowerCase();
+  return `<span class="fbinv-badge ${cls}">${label}</span>`;
+}
 
 function csRenderTable() {
   const orders = csGetFiltered();
@@ -3816,6 +3838,7 @@ function csRenderTable() {
         <td class="copy-col-cell">${copyCell}</td>
         <td class="mono">${it.quantity}</td>
         <td class="mono">${whLabel(o.warehouse||'')}</td>
+        <td>${csCondBadge(o.condition)}</td>
         <td class="mono">${o.po_number||'—'}</td>
         <td style="max-width:130px;overflow:hidden">${tracking}</td>
         <td><span class="badge badge-${itemBadgeStatus}">${itemStatusLabel}</span></td>
@@ -6974,52 +6997,4 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       var tries = 0;
       (function poll() {
         if (window.Clerk && typeof window.Clerk.load === "function") return resolve();
-        if (++tries > 200) return reject(new Error("Clerk script failed to load after 10s"));
-        setTimeout(poll, 50);
-      })();
-    });
-  }
-
-  function render() {
-    var body = document.body;
-    var mount = document.getElementById("clerk-sign-in-mount");
-    var btnSlot = document.getElementById("user-button-slot");
-
-    if (window.Clerk.user) {
-      body.classList.remove("auth-pending", "signed-out");
-      body.classList.add("signed-in");
-      if (btnSlot && !btnSlot.hasChildNodes()) {
-        window.Clerk.mountUserButton(btnSlot, { afterSignOutUrl: "/" });
-      }
-    } else {
-      body.classList.remove("auth-pending", "signed-in");
-      body.classList.add("signed-out");
-      setStatus("");
-      if (mount) {
-        mount.innerHTML = "";
-        window.Clerk.mountSignIn(mount, {
-          afterSignInUrl: "/",
-          afterSignUpUrl: "/",
-          appearance: { elements: { footer: { display: "none" } } }
-        });
-      }
-    }
-  }
-
-  window.addEventListener("load", function () {
-    waitForClerk()
-      .then(function () { return window.Clerk.load(); })
-      .then(function () {
-        render();
-        window.Clerk.addListener(render);
-      })
-      .catch(function (err) {
-        console.error("[Clerk] init failed:", err);
-        setStatus("Sign-in unavailable — check Clerk publishable key and Frontend API host in <head>.");
-      });
-  });
-})();
-</script>
-
-</body>
-</html>
+        if (++tries > 200) return reject(new Error("Clerk script failed to load a
