@@ -4578,27 +4578,18 @@ function psRender() {
 }
 
 function psCopySku(sku, btn) {
-  navigator.clipboard.writeText(sku).then(() => {
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ SKU'; btn.classList.remove('copied'); }, 1800);
-  });
+  copyToClipboard(sku, btn, '✓ copied', '⎘ SKU');
 }
 
 function psCopySkuDesc(sku, btn) {
   const desc = btn.dataset.desc || '';
-  navigator.clipboard.writeText(sku + '\n' + desc).then(() => {
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ SKU+Desc'; btn.classList.remove('copied'); }, 1800);
-  });
+  copyToClipboard(sku + '\n' + desc, btn, '✓ copied', '⎘ SKU+Desc');
 }
 
 function psCopyExact(btn) {
   const sku = btn.dataset.sku || '';
   if (!sku) return;
-  navigator.clipboard.writeText(sku).then(() => {
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy SKU'; btn.classList.remove('copied'); }, 1800);
-  });
+  copyToClipboard(sku, btn, '✓ copied', '⎘ Copy SKU');
 }
 
 // ─── PRODUCT SEARCH SUB-TAB SWITCHER ─────────────────────────────────────────
@@ -4648,9 +4639,6 @@ const GRV_EXPAND = {
   'mba':'macbook air','mbp':'macbook pro',
   'mba13':'macbook air 13','mba15':'macbook air 15',
   'mbp14':'macbook pro 14','mbp16':'macbook pro 16',
-  '8cc':'8-core cpu','10cc':'10-core cpu','12cc':'12-core cpu','14cc':'14-core cpu','16cc':'16-core cpu',
-  '8cg':'8-core gpu','10cg':'10-core gpu','12cg':'12-core gpu','16cg':'16-core gpu','20cg':'20-core gpu','24cg':'24-core gpu','32cg':'32-core gpu','40cg':'40-core gpu',
-  '8c8c':'8-core cpu 8-core gpu','10c10c':'10-core cpu 10-core gpu',
   'uskb':'us english kb','ukkb':'uk english kb','intkb':'international english kb',
   'intl':'international english kb','int':'international english kb',
   'euplug':'eu plug','ukplug':'uk plug','usplug':'us/ca plug','auplug':'au plug',
@@ -4665,6 +4653,22 @@ const GRV_EXPAND = {
   'wn11':'windows 11','wn11pro':'windows 11 pro','wn10':'windows 10',
   'fp':'fingerprint reader','fpr':'fingerprint reader',
 };
+
+// Dynamically expand core-count shorthands: 15c → 15-core, 18cc → 18-core cpu,
+// 20cg → 20-core gpu, 14cc/20cg handled as two separate expansions, etc.
+// Patterns: Nc / NcC / NcG  (case-insensitive, any number of digits)
+function grvExpandCores(word) {
+  // NcC  or  Ncc  → N-core cpu
+  let m = word.match(/^(\d+)cc$/i);
+  if (m) return m[1] + '-core cpu';
+  // NcG  or  Ncg  → N-core gpu
+  m = word.match(/^(\d+)cg$/i);
+  if (m) return m[1] + '-core gpu';
+  // plain Nc  → N-core  (e.g. "15c", "18c")
+  m = word.match(/^(\d+)c$/i);
+  if (m) return m[1] + '-core';
+  return null;
+}
 
 // Parse raw input into an array of phrase-strings to match against descriptions.
 // Handles shorthands, compound phrases from adjacent tokens, and slash-separated alternatives.
@@ -4689,6 +4693,10 @@ function grvTokenize(raw) {
     if (w3 && GRV_EXPAND[w3]) { phrases.push(GRV_EXPAND[w3]); i += 2; continue; }
     if (w2 && GRV_EXPAND[w2]) { phrases.push(GRV_EXPAND[w2]); i += 1; continue; }
     if (GRV_EXPAND[w])        { phrases.push(GRV_EXPAND[w]);            continue; }
+
+    // Dynamic core-count expansion: 15c, 18cc, 20cg, etc.
+    const coreExpanded = grvExpandCores(w);
+    if (coreExpanded) { phrases.push(coreExpanded); continue; }
 
     // Pass through raw word if it's meaningful (≥2 chars)
     if (w.length >= 2) phrases.push(w);
@@ -4760,11 +4768,7 @@ function grvHighlight(text, phrases) {
 }
 
 function grvCopyText(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ copied'; btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
-  });
+  copyToClipboard(text, btn);
 }
 
 function grvRender() {
@@ -5559,19 +5563,8 @@ function pmCopySerial(btn) {
   const serials = pmSerialStore[po] || [];
   const text = idx === 'all' ? serials.join('\n') : (serials[parseInt(idx)] || '');
   if (!text) return;
-  navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = 'copied!';
-    btn.style.borderColor = 'var(--green-dim)';
-    btn.style.color = 'var(--green)';
-    btn.style.background = 'rgba(22,163,74,0.08)';
-    setTimeout(() => {
-      btn.textContent = orig;
-      btn.style.borderColor = '';
-      btn.style.color = '';
-      btn.style.background = '';
-    }, 1800);
-  });
+  const orig = btn.textContent;
+  copyToClipboard(text, btn, 'copied!', orig);
 }
 
 function pmField(label, value, mono) {
@@ -6528,6 +6521,30 @@ function productsCopyFallback(text) {
     document.body.removeChild(ta);
     return ok;
   } catch (e) { return false; }
+}
+
+// Shared clipboard helper used by GRV Search, SKU Catalog, and any other tab.
+// Tries navigator.clipboard first, falls back to execCommand, then shows an
+// inline prompt as a last resort so the user can manually copy.
+function copyToClipboard(text, btn, labelDone, labelOrig) {
+  const done = () => {
+    if (!btn) return;
+    const orig = labelOrig || btn.textContent;
+    btn.textContent = labelDone || '✓ copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+  };
+  const fail = () => {
+    // Last resort: native prompt so user can Ctrl+C
+    window.prompt('Copy this (Ctrl+C / Cmd+C):', text);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      productsCopyFallback(text) ? done() : fail();
+    });
+  } else {
+    productsCopyFallback(text) ? done() : fail();
+  }
 }
 
 // ─── KEYDELIVERY HELPERS (defined early so render functions can call kdBtn) ──
