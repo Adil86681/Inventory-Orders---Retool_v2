@@ -599,6 +599,76 @@
   td.ps-cat-cell { font-family: var(--mono); font-size: 11px; }
   .ps-highlight { background: rgba(61,111,255,0.2); border-radius: 2px; color: var(--accent2); padding: 0 1px; }
 
+  /* GRV Search sub-tab */
+  .ps-subtab-nav {
+    display: flex; gap: 4px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border); padding-bottom: 0;
+  }
+  .ps-subtab-btn {
+    padding: 9px 20px; font-size: 13px; font-weight: 600;
+    color: var(--text2); cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent; transition: all 0.15s; font-family: var(--sans);
+  }
+  .ps-subtab-btn:hover { color: var(--text); }
+  .ps-subtab-btn.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  .ps-subtab-panel { display: none; }
+  .ps-subtab-panel.active { display: block; }
+
+  .grv-search-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px 32px; margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .grv-search-row { display: flex; gap: 10px; align-items: center; }
+  .grv-input-wrap { flex: 1; position: relative; }
+  .grv-input-wrap input {
+    width: 100%; background: var(--surface2); border: 2px solid var(--border);
+    border-radius: 9px; padding: 13px 16px 13px 44px;
+    color: var(--text); font-family: var(--mono); font-size: 14px;
+    outline: none; transition: all 0.18s;
+  }
+  .grv-input-wrap input::placeholder { color: var(--muted); font-family: var(--sans); font-size: 13px; }
+  .grv-input-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(61,111,255,0.12); background: var(--surface3); }
+  .grv-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 17px; pointer-events: none; }
+  .grv-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 12px; }
+  .grv-results-wrap { margin-top: 8px; }
+  .grv-match-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 22px; margin-bottom: 10px;
+    transition: border-color 0.15s;
+  }
+  .grv-match-card:hover { border-color: var(--border2); }
+  .grv-match-card.exact { border-color: rgba(52,211,153,0.45); background: rgba(52,211,153,0.04); }
+  .grv-match-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; margin-bottom: 10px;
+  }
+  .grv-match-label.exact { color: var(--green); }
+  .grv-match-label.fuzzy { color: var(--accent2); }
+  .grv-match-code {
+    font-family: var(--mono); font-size: 12px; color: var(--accent2);
+    word-break: break-all; margin-bottom: 6px;
+  }
+  .grv-match-desc { font-size: 13px; color: var(--text); line-height: 1.55; margin-bottom: 10px; }
+  .grv-match-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grv-match-score {
+    font-size: 11px; font-family: var(--mono); padding: 2px 8px;
+    border-radius: 12px; background: var(--surface3); border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .grv-match-actions { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .grv-copy-btn {
+    padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text2); transition: all 0.15s; font-family: var(--mono);
+  }
+  .grv-copy-btn:hover { border-color: var(--accent); color: var(--accent2); background: rgba(61,111,255,0.08); }
+  .grv-copy-btn.copied { border-color: var(--green-dim); color: var(--green); background: rgba(52,211,153,0.08); }
+  .grv-no-results {
+    text-align: center; padding: 48px 24px; color: var(--muted); font-size: 13px;
+  }
+  .grv-highlight { background: rgba(61,111,255,0.18); border-radius: 2px; color: var(--accent2); padding: 0 1px; }
+
   .ps-parsed-filters {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 8px 10px; margin-bottom: 14px; padding: 12px 14px;
@@ -1324,11 +1394,20 @@
       <h1>Product Search</h1>
       <p>SKU Catalog · 4 columns · Search by MPN, description, category, or SKU ID</p>
     </div>
-    <div class="page-actions">
+    <div class="page-actions" id="ps-mainActions">
       <button class="btn" id="ps-parsedToggle" onclick="psToggleParsed()">🧩 Parsed view</button>
       <button class="btn btn-primary" onclick="psRefresh()">↺ Refresh Catalog</button>
     </div>
   </div>
+
+  <!-- Sub-tab nav -->
+  <div class="ps-subtab-nav">
+    <button class="ps-subtab-btn active" id="ps-stab-catalog" onclick="psSwitchSubtab('catalog')">📦 SKU Catalog</button>
+    <button class="ps-subtab-btn" id="ps-stab-grv" onclick="psSwitchSubtab('grv')">🔎 GRV Search</button>
+  </div>
+
+  <!-- SKU Catalog sub-panel -->
+  <div class="ps-subtab-panel active" id="ps-panel-catalog">
 
   <div class="ps-hero">
     <div class="ps-search-row">
@@ -1415,6 +1494,28 @@
       Click the tab to load — or press Refresh Catalog
     </div>
   </div>
+  </div><!-- /ps-panel-catalog -->
+
+  <!-- GRV Search sub-panel -->
+  <div class="ps-subtab-panel" id="ps-panel-grv">
+    <div class="grv-search-box">
+      <div class="grv-search-row">
+        <div class="grv-input-wrap">
+          <span class="grv-search-icon">⌕</span>
+          <input type="text" id="grv-input"
+            placeholder="Paste or type an item description, e.g. MBA13 M4 10cC 24G 256G Midnight EU…"
+            oninput="grvOnInput()"
+            onkeydown="if(event.key==='Escape'){grvClear()}"
+            autocomplete="off" spellcheck="false">
+        </div>
+        <button class="ps-clear-btn" onclick="grvClear()">✕ Clear</button>
+      </div>
+      <div class="grv-hint" id="grv-hint">Type any part of a description — abbreviations like MBA13, M4, 24G, EU work too</div>
+    </div>
+
+    <div class="grv-results-wrap" id="grv-results"></div>
+  </div><!-- /ps-panel-grv -->
+
 </div>
 </div>
 
@@ -4498,6 +4599,171 @@ function psCopyExact(btn) {
     btn.textContent = '✓ copied'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = '⎘ Copy SKU'; btn.classList.remove('copied'); }, 1800);
   });
+}
+
+// ─── PRODUCT SEARCH SUB-TAB SWITCHER ─────────────────────────────────────────
+function psSwitchSubtab(tab) {
+  ['catalog','grv'].forEach(t => {
+    document.getElementById('ps-stab-'+t).classList.toggle('active', t === tab);
+    document.getElementById('ps-panel-'+t).classList.toggle('active', t === tab);
+  });
+  // Show/hide the catalog action buttons
+  const actions = document.getElementById('ps-mainActions');
+  if (actions) actions.style.display = tab === 'catalog' ? '' : 'none';
+  // Auto-focus GRV input
+  if (tab === 'grv') {
+    if (!psCatalogLoaded) psLoadCatalog();
+    setTimeout(() => { const el = document.getElementById('grv-input'); if (el) el.focus(); }, 60);
+  }
+}
+
+// ─── GRV SEARCH ──────────────────────────────────────────────────────────────
+let grvSearchTimer = null;
+
+function grvOnInput() {
+  clearTimeout(grvSearchTimer);
+  grvSearchTimer = setTimeout(grvRender, 180);
+}
+
+function grvClear() {
+  document.getElementById('grv-input').value = '';
+  document.getElementById('grv-results').innerHTML = '';
+  document.getElementById('grv-hint').textContent = 'Type any part of a description — abbreviations like MBA13, M4, 24G, EU work too';
+  document.getElementById('grv-input').focus();
+}
+
+// Expand common shorthand tokens into full words for matching
+function grvExpandToken(t) {
+  const map = {
+    'mba':'macbook air','mbp':'macbook pro','mba13':'macbook air 13','mba15':'macbook air 15',
+    'mbp14':'macbook pro 14','mbp16':'macbook pro 16',
+    '8cc':'8-core cpu','10cc':'10-core cpu','12cc':'12-core cpu','8cg':'8-core gpu',
+    '10cg':'10-core gpu','12cg':'12-core gpu','16cg':'16-core gpu',
+    '8c8c':'8-core cpu 8-core gpu','10c10c':'10-core cpu 10-core gpu',
+    'uskb':'us english kb','ukkb':'uk english kb','intkb':'international english kb',
+    'intl':'international','int':'international',
+    'eu':'eu plug','uk':'uk plug','us':'us','au':'au plug',
+    '8g':'8gb ram','16g':'16gb ram','24g':'24gb ram','32g':'32gb ram','36g':'36gb ram','48g':'48gb ram','64g':'64gb ram',
+    '256g':'256gb ssd','512g':'512gb ssd','1t':'1tb ssd','2t':'2tb ssd',
+    'm1':'m1','m2':'m2','m3':'m3','m4':'m4',
+    'm1pro':'m1 pro','m2pro':'m2 pro','m3pro':'m3 pro','m4pro':'m4 pro',
+    'm1max':'m1 max','m2max':'m2 max','m3max':'m3 max','m4max':'m4 max',
+    'mid':'midnight','slv':'silver','slvr':'silver','sky':'sky blue','stg':'starlight',
+    'spgry':'space gray','spgrey':'space grey',
+    'wn11':'windows 11','wn11pro':'windows 11 pro','wn10':'windows 10',
+    'fp':'fingerprint','fpr':'fingerprint reader',
+  };
+  return map[t.toLowerCase()] || t;
+}
+
+function grvTokenize(raw) {
+  // Split on whitespace and common separators, drop very short tokens
+  return raw.toLowerCase()
+    .replace(/[-–—]/g, ' ')
+    .split(/[\s,/]+/)
+    .map(t => t.replace(/[^a-z0-9]/g, ''))
+    .filter(t => t.length >= 2)
+    .map(grvExpandToken);
+}
+
+function grvScore(desc, tokens) {
+  const d = desc.toLowerCase();
+  let score = 0;
+  let matchCount = 0;
+  for (const tok of tokens) {
+    if (d.includes(tok)) { score += tok.length; matchCount++; }
+  }
+  // Bonus: fraction of tokens matched
+  score += (matchCount / tokens.length) * 10;
+  return { score, matchCount };
+}
+
+function grvHighlight(text, tokens) {
+  let result = escHtml(text);
+  // Highlight all original token words
+  const allTerms = [...new Set(tokens)];
+  allTerms.sort((a,b) => b.length - a.length); // longest first to avoid partial re-replacement
+  allTerms.forEach(tok => {
+    const re = new RegExp(`(${tok.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    result = result.replace(re, '<span class="grv-highlight">$1</span>');
+  });
+  return result;
+}
+
+function grvCopyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ copied'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+function grvRender() {
+  const raw = document.getElementById('grv-input').value.trim();
+  const resultsEl = document.getElementById('grv-results');
+  const hintEl = document.getElementById('grv-hint');
+
+  if (!raw) {
+    resultsEl.innerHTML = '';
+    hintEl.textContent = 'Type any part of a description — abbreviations like MBA13, M4, 24G, EU work too';
+    return;
+  }
+
+  if (!psCatalogLoaded) {
+    resultsEl.innerHTML = '<div class="grv-no-results">Catalog loading… please wait</div>';
+    psLoadCatalog();
+    return;
+  }
+
+  const tokens = grvTokenize(raw);
+  if (!tokens.length) {
+    resultsEl.innerHTML = '<div class="grv-no-results">Enter more characters to search</div>';
+    return;
+  }
+
+  // Score all catalog items
+  const scored = psCatalog.map(r => {
+    const { score, matchCount } = grvScore(r.desc + ' ' + r.sku_id + ' ' + r.mpn, tokens);
+    return { ...r, score, matchCount };
+  }).filter(r => r.matchCount > 0);
+
+  scored.sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
+
+  const top = scored.slice(0, 10);
+  const exact = top.length > 0 && top[0].matchCount === tokens.length ? top[0] : null;
+
+  hintEl.textContent = scored.length === 0
+    ? `No matches found for "${raw}"`
+    : `${scored.length} match${scored.length !== 1 ? 'es' : ''} — showing top ${Math.min(top.length, scored.length)}`;
+
+  if (top.length === 0) {
+    resultsEl.innerHTML = '<div class="grv-no-results">No results — try fewer or different terms</div>';
+    return;
+  }
+
+  // Highlight tokens: use the expanded tokens + original raw words
+  const rawTokens = raw.toLowerCase().split(/[\s,/\-–—]+/).filter(t => t.length >= 2);
+  const hlTokens = [...new Set([...tokens, ...rawTokens])];
+
+  resultsEl.innerHTML = top.map((r, i) => {
+    const isExact = exact && i === 0;
+    const matchFrac = Math.round((r.matchCount / tokens.length) * 100);
+    return `<div class="grv-match-card${isExact ? ' exact' : ''}">
+      <div class="grv-match-label ${isExact ? 'exact' : 'fuzzy'}">${isExact ? '⚡ Best Match' : `Match ${i + 1}`}</div>
+      <div class="grv-match-code">${escHtml(r.sku_id)}</div>
+      <div class="grv-match-desc">${grvHighlight(r.desc, hlTokens)}</div>
+      <div class="grv-match-meta">
+        <span class="ps-exact-cat">${escHtml(r.cat || '—')}</span>
+        ${r.mpn ? `<span class="grv-match-score">MPN: ${escHtml(r.mpn)}</span>` : ''}
+        <span class="grv-match-score">${r.matchCount}/${tokens.length} terms · ${matchFrac}%</span>
+      </div>
+      <div class="grv-match-actions">
+        <button class="grv-copy-btn" onclick="grvCopyText(${JSON.stringify(r.sku_id)}, this)">⎘ Copy Item Code</button>
+        <button class="grv-copy-btn" onclick="grvCopyText(${JSON.stringify(r.sku_id + '\n' + r.desc)}, this)">⎘ Copy Code + Desc</button>
+        ${r.mpn ? `<button class="grv-copy-btn" onclick="grvCopyText(${JSON.stringify(r.mpn)}, this)">⎘ Copy MPN</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ─── PARSED VIEW (COMPUTER CATEGORY) ─────────────────────────────────────────
