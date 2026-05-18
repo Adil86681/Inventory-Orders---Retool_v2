@@ -8381,8 +8381,9 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
     var endISO   = range.end.toISOString().slice(0, 10);   // Sunday (inclusive)
 
     var rows = typeof kpiDashRows !== 'undefined' ? kpiDashRows : [];
-    var byWh = {};   // { warehouse: { total, met, missed } }
+    var byWh = {};   // { warehouse: { total, units, met, missed } }
     var grandTotal = 0;
+    var grandUnits = 0;
 
     rows.forEach(function (r) {
       // Must have both timestamps (completed order)
@@ -8395,9 +8396,11 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       if (completedISO < startISO || completedISO > endISO) return;
 
       var wh = (r.warehouse || '(Unknown)').replace(/^Warehouse\s*-\s*/i, '').trim() || '(Unknown)';
-      if (!byWh[wh]) byWh[wh] = { total: 0, met: 0, missed: 0 };
+      if (!byWh[wh]) byWh[wh] = { total: 0, units: 0, met: 0, missed: 0 };
       byWh[wh].total++;
+      byWh[wh].units += (r.total_qty || 0);
       grandTotal++;
+      grandUnits += (r.total_qty || 0);
 
       // SLO: ≤ 2 business days from at_facility_at → completed_at
       var start  = kpiParseDate(r.at_facility_at);
@@ -8418,7 +8421,7 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       var d = byWh[wh];
       var sloEval = d.met + d.missed;
       var sloPct  = sloEval > 0 ? (d.met / sloEval * 100).toFixed(1) : null;
-      return { wh: wh, total: d.total, met: d.met, missed: d.missed, sloEval: sloEval, sloPct: sloPct };
+      return { wh: wh, total: d.total, units: d.units, met: d.met, missed: d.missed, sloEval: sloEval, sloPct: sloPct };
     });
 
     // Overall SLO
@@ -8431,6 +8434,7 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       weekStart:    fmtShort(range.start),
       weekEnd:      fmtShort(range.end),
       grandTotal:   grandTotal,
+      grandUnits:   grandUnits,
       whRows:       whRows,
       overallMet:   overallMet,
       overallMissed:overallMissed,
@@ -8449,16 +8453,21 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
 
   /* ── email body builder ── */
   function buildKpiWeeklyEmailBody(s) {
-    var div = '─'.repeat(40);
+    var div = '─'.repeat(56);
     var header = 'Weekly Shipment Summary — ' + s.weekStart + ' – ' + s.weekEnd;
+
+    // Dynamic column width: fit the longest warehouse name (min 18)
+    var maxWhLen = s.whRows.reduce(function (m, r) { return Math.max(m, r.wh.length); }, 7); // 7 = 'Overall'
+    maxWhLen = Math.max(maxWhLen, 18);
 
     var whLines = s.whRows.length > 0
       ? s.whRows.map(function (r) {
           var pct  = r.sloPct !== null ? r.sloPct + '%' : 'N/A';
           var flag = r.sloPct !== null ? (parseFloat(r.sloPct) >= 90 ? '✓' : (parseFloat(r.sloPct) >= 75 ? '~' : '✗')) : '-';
-          return '  ' + r.wh.padEnd(22) +
-                 String(r.total).padStart(4) + ' received   ' +
-                 pct.padStart(6) + ' SLO  ' + flag;
+          var recv = String(r.total).padStart(4) + ' received (' + r.units + ' units)';
+          return '  ' + r.wh.padEnd(maxWhLen + 2) +
+                 recv.padEnd(26) +
+                 pct.padStart(7) + ' SLO  ' + flag;
         }).join('\n')
       : '  No completed shipments found for this period.';
 
@@ -8466,21 +8475,22 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
     var overallFlag   = s.overallPct !== null
       ? (parseFloat(s.overallPct) >= 90 ? '✓' : (parseFloat(s.overallPct) >= 75 ? '~' : '✗'))
       : '-';
+    var overallRecv = String(s.grandTotal).padStart(4) + ' received (' + s.grandUnits + ' units)';
 
     return 'Hi Team,\n\n' +
       header + '\n\n' +
       div + '\n' +
       'SHIPMENTS RECEIVED LAST WEEK\n' +
       div + '\n' +
-      '  Total across all warehouses: ' + s.grandTotal + ' shipment' + (s.grandTotal !== 1 ? 's' : '') + '\n\n' +
+      '  Total across all warehouses: ' + s.grandTotal + ' shipment' + (s.grandTotal !== 1 ? 's' : '') + ' · ' + s.grandUnits + ' unit' + (s.grandUnits !== 1 ? 's' : '') + '\n\n' +
       div + '\n' +
       'SLO PERFORMANCE BY WAREHOUSE  (≤ 2 business days · at-facility → completed)\n' +
       div + '\n' +
       whLines + '\n' +
       div + '\n' +
-      '  ' + 'Overall'.padEnd(22) +
-      String(s.grandTotal).padStart(4) + ' received   ' +
-      overallPctStr.padStart(6) + ' SLO  ' + overallFlag + '\n' +
+      '  ' + 'Overall'.padEnd(maxWhLen + 2) +
+      overallRecv.padEnd(26) +
+      overallPctStr.padStart(7) + ' SLO  ' + overallFlag + '\n' +
       div + '\n\n' +
       '— Firstbase Ops Bot';
   }
@@ -8502,12 +8512,13 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
           return '<tr>' +
             '<td style="padding:9px 14px;font-size:13px;border-bottom:1px solid var(--border)">' + escHTML(r.wh) + '</td>' +
             '<td style="padding:9px 14px;font-size:13px;font-family:var(--mono);text-align:right;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent2)">' + r.total + '</td>' +
+            '<td style="padding:9px 14px;font-size:12px;font-family:var(--mono);text-align:right;border-bottom:1px solid var(--border);color:var(--text2)">' + r.units + '</td>' +
             '<td style="padding:9px 14px;font-size:13px;font-family:var(--mono);text-align:right;border-bottom:1px solid var(--border);font-weight:700;color:' + pctColor + '">' + pctStr + '</td>' +
             '<td style="padding:9px 14px;font-size:12px;font-family:var(--mono);text-align:right;border-bottom:1px solid var(--border);color:var(--green)">' + r.met + '</td>' +
             '<td style="padding:9px 14px;font-size:12px;font-family:var(--mono);text-align:right;border-bottom:1px solid var(--border);color:' + (r.missed > 0 ? 'var(--red)' : 'var(--text2)') + '">' + r.missed + '</td>' +
             '</tr>';
         }).join('')
-      : '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No completed shipments found for this period.</td></tr>';
+      : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted);font-size:13px">No completed shipments found for this period.</td></tr>';
 
     var overallPctStr   = s.overallPct !== null ? s.overallPct + '%' : '—';
     var overallPctColor = sloColor(s.overallPct !== null ? parseFloat(s.overallPct) : null);
@@ -8519,9 +8530,11 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       '<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:16px">' + escHTML(s.weekStart) + ' – ' + escHTML(s.weekEnd) + '</div>' +
 
       // Total received callout
-      '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:baseline;gap:10px">' +
+      '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
         '<span style="font-size:32px;font-weight:700;font-family:var(--mono);color:var(--accent2)">' + s.grandTotal + '</span>' +
-        '<span style="font-size:14px;color:var(--text2)">shipments received across all warehouses</span>' +
+        '<span style="font-size:14px;color:var(--text2)">shipments received</span>' +
+        '<span style="font-size:13px;font-family:var(--mono);color:var(--muted);margin-left:4px">(' + s.grandUnits + ' units)</span>' +
+        '<span style="font-size:12px;color:var(--muted);margin-left:4px">across all warehouses</span>' +
       '</div>' +
 
       // Per-warehouse table
@@ -8529,7 +8542,8 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
       '<table style="width:100%;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px">' +
         '<thead><tr style="background:var(--surface2)">' +
           '<th style="' + thStyleL + '">Warehouse</th>' +
-          '<th style="' + thStyle  + '">Received</th>' +
+          '<th style="' + thStyle  + '">Shipments</th>' +
+          '<th style="' + thStyle  + '">Units</th>' +
           '<th style="' + thStyle  + '">% SLO</th>' +
           '<th style="' + thStyle  + '">In SLO</th>' +
           '<th style="' + thStyle  + '">Missed</th>' +
@@ -8538,6 +8552,7 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
         '<tfoot><tr style="background:var(--surface2)">' +
           '<td style="padding:9px 14px;font-size:13px;font-weight:700;border-top:2px solid var(--border2)">Overall</td>' +
           '<td style="padding:9px 14px;font-size:14px;font-family:var(--mono);font-weight:700;text-align:right;border-top:2px solid var(--border2);color:var(--accent2)">' + s.grandTotal + '</td>' +
+          '<td style="padding:9px 14px;font-size:13px;font-family:var(--mono);font-weight:700;text-align:right;border-top:2px solid var(--border2);color:var(--text2)">' + s.grandUnits + '</td>' +
           '<td style="padding:9px 14px;font-size:14px;font-family:var(--mono);font-weight:700;text-align:right;border-top:2px solid var(--border2);color:' + overallPctColor + '">' + overallPctStr + '</td>' +
           '<td style="padding:9px 14px;font-size:13px;font-family:var(--mono);text-align:right;border-top:2px solid var(--border2);color:var(--green)">' + s.overallMet + '</td>' +
           '<td style="padding:9px 14px;font-size:13px;font-family:var(--mono);text-align:right;border-top:2px solid var(--border2);color:' + (s.overallMissed > 0 ? 'var(--red)' : 'var(--text2)') + '">' + s.overallMissed + '</td>' +
