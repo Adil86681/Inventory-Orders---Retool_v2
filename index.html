@@ -761,6 +761,97 @@
   .comment-input:focus { border-color: var(--accent); background: var(--surface2);
     outline: none; color: var(--text); box-shadow: 0 0 0 2px rgba(61,111,255,0.1); }
 
+
+/* ─── SIDEBAR LAYOUT ────────────────────────────────────────────────────────── */
+.sidebar-layout {
+  display: flex;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+.sidebar-nav {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 12px 8px 24px;
+}
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+.sidebar-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 12px 10px 5px;
+  margin-top: 4px;
+}
+.sidebar-section-label:first-child { margin-top: 0; padding-top: 4px; }
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 4px;
+}
+.sidebar-nav .tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+  border-bottom: none !important;
+  font-family: var(--sans);
+}
+.sidebar-nav .tab-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.sidebar-nav .tab-btn.active {
+  background: var(--primary-light);
+  color: var(--accent2);
+}
+.sidebar-nav .tab-btn i {
+  font-size: 16px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.sidebar-nav .tab-btn.active i { opacity: 1; }
+.sidebar-nav .tab-btn .tab-label { flex: 1; }
+.sidebar-nav .tab-count {
+  font-size: 10px;
+  font-family: var(--mono);
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  padding: 1px 6px;
+  border-radius: 20px;
+}
+.sidebar-nav .tab-btn.active .tab-count {
+  background: rgba(61,111,255,0.15);
+  border-color: rgba(61,111,255,0.3);
+  color: var(--accent2);
+}
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+.tab-nav { display: none !important; }
+
 /* ─── INVENTORY MANAGEMENT TAB ────────────────────────────────────────────── */
 #panel-fbinv { padding: 0; }
 .fbinv-wrap { max-width: 100%; }
@@ -978,6 +1069,7 @@
 </style>
 
 <!-- Chart.js for the Inbound KPI dashboard -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 
 <!-- ═══ CLERK SSO ═══
@@ -1045,46 +1137,76 @@
       <span id="kpiDot" style="width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block"></span>
       <span id="kpiText">KPI: idle</span>
     </span>
-    <button class="refresh-btn" onclick="kpiForceResync()" title="Clear KPI snapshot and re-send all transitions — use this to split existing combined rows into per-item rows" style="font-size:10px;padding:2px 7px;opacity:0.75">↺ KPI resync</button>
     <span id="lastUpdated" style="font-size:11px;color:var(--muted)">Never synced</span>
-    <button class="refresh-btn" id="inv-loadBtnTopbar" onclick="invLoadSelected()" disabled style="opacity:0.45;cursor:not-allowed" title="Select an org first">▶ Load</button>
     <button class="refresh-btn" onclick="manualRefresh()" title="Refresh now">↺ Refresh</button>
     <div id="user-button-slot" title="Account"></div>
   </div>
 </div>
 
-<div class="tab-nav">
+<div class="sidebar-layout">
+<nav class="sidebar-nav" aria-label="Main navigation">
+
+  <div class="sidebar-section-label">Orders</div>
   <button class="tab-btn active" onclick="switchTab('inv')" id="tabBtn-inv">
-    📦 Inventory Orders <span class="tab-count" id="tabCount-inv">0</span>
+    <i class="ti ti-package" aria-hidden="true"></i>
+    <span class="tab-label">Inventory orders</span>
+    <span class="tab-count" id="tabCount-inv">0</span>
   </button>
   <button class="tab-btn" onclick="switchTab('cs')" id="tabBtn-cs">
-    🚚 Customer Supplied Orders <span class="tab-count" id="tabCount-cs">0</span>
+    <i class="ti ti-truck" aria-hidden="true"></i>
+    <span class="tab-label">Customer supplied</span>
+    <span class="tab-count" id="tabCount-cs">0</span>
   </button>
+
+  <div class="sidebar-divider"></div>
+  <div class="sidebar-section-label">Catalog</div>
   <button class="tab-btn" onclick="switchTab('search')" id="tabBtn-search">
-    🔍 Product Search <span class="tab-count" id="tabCount-search">0</span>
-  </button>
-  <button class="tab-btn" onclick="switchTab('adil')" id="tabBtn-adil">
-    🧭 Adil's Dashboard
-  </button>
-  <button class="tab-btn" onclick="switchTab('liveInv')" id="tabBtn-liveInv">
-    🗃️ Inventory <span class="tab-count" id="tabCount-liveInv">0</span>
+    <i class="ti ti-search" aria-hidden="true"></i>
+    <span class="tab-label">Product search</span>
+    <span class="tab-count" id="tabCount-search">0</span>
   </button>
   <button class="tab-btn" onclick="switchTab('products')" id="tabBtn-products">
-    🛒 Products <span class="tab-count" id="tabCount-products">0</span>
+    <i class="ti ti-shopping-cart" aria-hidden="true"></i>
+    <span class="tab-label">Products</span>
+    <span class="tab-count" id="tabCount-products">0</span>
   </button>
+  <button class="tab-btn" onclick="switchTab('liveInv')" id="tabBtn-liveInv">
+    <i class="ti ti-database" aria-hidden="true"></i>
+    <span class="tab-label">Inventory</span>
+    <span class="tab-count" id="tabCount-liveInv">0</span>
+  </button>
+
+  <div class="sidebar-divider"></div>
+  <div class="sidebar-section-label">Analytics</div>
   <button class="tab-btn" onclick="switchTab('kpi')" id="tabBtn-kpi">
-    📊 Inbound KPI
-  </button>
-  <button class="tab-btn" onclick="switchTab('grv')" id="tabBtn-grv">
-    💬 GRV Messaging
+    <i class="ti ti-chart-bar" aria-hidden="true"></i>
+    <span class="tab-label">Inbound KPI</span>
   </button>
   <button class="tab-btn" onclick="switchTab('clientAnalytics')" id="tabBtn-clientAnalytics">
-    🏢 Client Analytics
+    <i class="ti ti-building" aria-hidden="true"></i>
+    <span class="tab-label">Client analytics</span>
   </button>
   <button class="tab-btn" onclick="switchTab('inventoryReview')" id="tabBtn-inventoryReview">
-    📊 Inventory Review
+    <i class="ti ti-clipboard-list" aria-hidden="true"></i>
+    <span class="tab-label">Inventory review</span>
   </button>
-</div>
+
+  <div class="sidebar-divider"></div>
+  <div class="sidebar-section-label">Messaging</div>
+  <button class="tab-btn" onclick="switchTab('grv')" id="tabBtn-grv">
+    <i class="ti ti-message-dots" aria-hidden="true"></i>
+    <span class="tab-label">GRV messaging</span>
+  </button>
+
+  <div class="sidebar-divider"></div>
+  <div class="sidebar-section-label">Other</div>
+  <button class="tab-btn" onclick="switchTab('adil')" id="tabBtn-adil">
+    <i class="ti ti-compass" aria-hidden="true"></i>
+    <span class="tab-label">Adil's Dashboard</span>
+  </button>
+
+</nav>
+<div class="sidebar-content">
 
 <!-- ═══ INVENTORY ORDERS TAB ═══ -->
 <div class="tab-panel active" id="panel-inv">
@@ -7551,6 +7673,8 @@ function grvClearRows() {
   </div><!-- /irContent -->
 </div>
 </div>
+</div><!-- /sidebar-content -->
+</div><!-- /sidebar-layout -->
 
 
 <script>
