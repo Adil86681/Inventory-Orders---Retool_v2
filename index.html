@@ -3203,7 +3203,7 @@ function kpiRenderBreachTable(rows) {
       <td>${escapeHTML(r.organization || '')}</td>
       <td>${escapeHTML((r.warehouse || '').replace('Warehouse - ', ''))}</td>
       <td>${escapeHTML(r.product_title || '')}</td>
-      <td class="mono">${escapeHTML(String(r[cfg.startField] || '').substring(0, 10))}</td>
+      <td class="mono">${escapeHTML(fmtDate(String(r[cfg.startField] || '')))}</td>
       <td class="num kpi-breach-age">${lastCol}</td>
     </tr>
   `;
@@ -3879,7 +3879,7 @@ async function invFetchFromAPI() {
       if (s) {
         const prev = JSON.parse(s).orders || {};
         Object.entries(prev).forEach(([id, o]) => {
-          preservedState[id] = { appStatus: o.appStatus, receivedAt: o.receivedAt };
+          preservedState[id] = { appStatus: o.appStatus, receivedAt: o.receivedAt, atFacilityDate: o.atFacilityDate };
         });
       }
     } catch(e) {}
@@ -3955,6 +3955,7 @@ async function invFetchFromAPI() {
         itemStatus: primaryStatus,
         appStatus: appStatus,
         receivedAt: preserved.receivedAt || '',
+        atFacilityDate: preserved.atFacilityDate || (itemStatuses.some(s => ['ARRIVED_AT_PROCESSING_FACILITY','PARTIALLY_RECEIVED','RECEIVED','COMPLETED'].includes(s)) ? new Date().toISOString().split('T')[0] : ''),
         addedAt: preserved.receivedAt ? new Date().toISOString() : new Date().toISOString(),
         items: items
       };
@@ -4209,7 +4210,9 @@ function invRenderTable() {
     const multiClass = isMulti ? ' multi-item-row' : '';
 
     o.items.forEach((it, idx) => {
-      const itemStatusLabel = INV_STATUS_LABELS[it.item_status] || it.item_status;
+      const itemStatusLabel = (it.item_status === 'ARRIVED_AT_PROCESSING_FACILITY' && o.atFacilityDate)
+        ? `AT FACILITY — ${fmtDate(o.atFacilityDate)}`
+        : (INV_STATUS_LABELS[it.item_status] || it.item_status);
       const eskuItem = (it.sku_id || '').replace(/'/g, "\\'");
       const eprod = (it.product_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const groupFirst = idx === 0 ? ' order-group-first' : '';
@@ -4239,7 +4242,7 @@ function invRenderTable() {
         <td class="mono">${o.po_number || '—'}</td>
         <td class="mono" style="max-width:130px;overflow:hidden">${tracking}</td>
         <td><span class="badge badge-${it.item_status}">${itemStatusLabel}</span></td>
-        <td class="date-cell">${o.created_date || '—'}</td>
+        <td class="date-cell">${fmtDate(o.created_date)}</td>
       </tr>`;
     });
   });
@@ -5786,7 +5789,14 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),3000);
 }
-function fmtDate(d) { return d ? d.substring(0,10) : '—'; }
+function fmtDate(d) {
+  if (!d) return '—';
+  const s = String(d).substring(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const [y, m, day] = s.split('-');
+  return `${day}-${months[parseInt(m,10)-1]}-${y.slice(-2)}`;
+}
 function whLabel(w) { return (w||'').replace('Warehouse - ','').replace('Warehouse ',''); }
 
 function switchTab(tab) {
@@ -6575,7 +6585,7 @@ function fbinvRender() {
         const v = fbinvGet(row, c.key) || '—';
         if (c.key === 'deployStatus')    return `<td>${fbinvDeployBadge(v)}</td>`;
         if (c.key === 'conditionStatus') return `<td>${fbinvCondBadge(v)}</td>`;
-        if (c.key === 'createdAt')       return `<td style="font-family:var(--mono);font-size:11px;">${v.substring(0,10)||'—'}</td>`;
+        if (c.key === 'createdAt')       return `<td style="font-family:var(--mono);font-size:11px;">${fmtDate(v)}</td>`;
         if (c.key === 'serialNumber' || c.key === 'skuId')
           return `<td style="font-family:var(--mono);font-size:11px;">${v}</td>`;
         if (c.key === 'productTitle')
@@ -8506,7 +8516,8 @@ var _WISE_ORG_ID = '5935ee50-ebe6-4e99-924e-a577315f806f';
   var kpiWeeklySelectedKey = null;
 
   function fmtShort(d) {
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    return String(d.getDate()).padStart(2,'0') + '-' + months[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
   }
 
   function escHTML(s) {
