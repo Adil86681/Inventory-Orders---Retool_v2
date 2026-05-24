@@ -4374,7 +4374,7 @@ async function csFetchFromAPI() {
         brand: item.sku?.vendor?.name || '',
         product_title: item.sku?.skuInformation?.productTitle || item.description || '',
         quantity: item.quantity || 0,
-        item_status: item.status || order.status || 'EXPECTED',
+        item_status: (item.status && item.status !== 'EXPECTED' ? item.status : null) || order.status || 'EXPECTED',
         sku_id: item.sku?.id || '',
         mpn: item.sku?.skuInformation?.partNumber || item.sku?.vendorSku || '',
         category: item.sku?.category?.nameSingular || ''
