@@ -1384,7 +1384,7 @@
           <col style="width:110px"><!-- Status -->
           <col style="width:100px"><!-- Created Date -->
           <col style="width:130px"><!-- Comments -->
-          <col style="width:130px"><!-- Action -->
+
         </colgroup>
         <thead><tr>
           <th class="row-select-cell"><input type="checkbox" id="cs-selectAll" onclick="csSelectAllToggle(this)" title="Select all visible orders"></th>
@@ -1399,7 +1399,7 @@
           <th onclick="csSortBy('appStatus')">Status</th>
           <th onclick="csSortBy('created_date')">Created</th>
           <th>Comments</th>
-          <th>Action</th>
+
         </tr></thead>
         <tbody id="cs-tableBody"></tbody>
       </table>
@@ -4374,7 +4374,7 @@ async function csFetchFromAPI() {
         brand: item.sku?.vendor?.name || '',
         product_title: item.sku?.skuInformation?.productTitle || item.description || '',
         quantity: item.quantity || 0,
-        item_status: item.status || 'EXPECTED',
+        item_status: item.status || order.status || 'EXPECTED',
         sku_id: item.sku?.id || '',
         mpn: item.sku?.skuInformation?.partNumber || item.sku?.vendorSku || '',
         category: item.sku?.category?.nameSingular || ''
@@ -4570,7 +4570,7 @@ function csRenderTable() {
         <td><span class="badge badge-${itemBadgeStatus}">${itemStatusLabel}</span></td>
         <td class="date-cell">${fmtDate(o.created_date)}</td>
         <td class="comment-cell">${commentInput(fid)}</td>
-        <td>${btn}</td>
+
       </tr>`;
     });
   });
