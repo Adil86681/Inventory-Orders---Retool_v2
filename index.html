@@ -2,7 +2,7 @@
 {
   "name": "Inbound Order Tracker",
   "schemaVersion": 1,
-  "description": "Inbound Order Tracker — Live dashboard for Firstbase operations. Includes Inventory Orders, Customer Supplied Orders, Product Search, KPI, GRV Messaging, and Client Analytics tabs. The Client Analytics tab has a client search dropdown, monthly orders bar chart (last 24 months), and a filterable catalog/SKU table per client. The GRV Messaging tab has Start Coventry and Start Dreiech buttons."
+  "description": "Inbound Order Tracker — Live dashboard for Firstbase operations. Includes Inventory Orders, Customer Supplied Orders (with Active Orders and Old Shipment Notices sub-tabs), Product Search, KPI, GRV Messaging, and Client Analytics tabs. The Customer Supplied tab splits orders by date: orders >6 months old are in Old Shipment Notices. The Client Analytics tab has a client search dropdown, monthly orders bar chart (last 24 months), and a filterable catalog/SKU table per client. The GRV Messaging tab has Start Coventry and Start Dreiech buttons."
 }
 </script>
 <html lang="en">
@@ -395,6 +395,25 @@
   #cs-table { table-layout: fixed; }
   #cs-table td, #cs-table th { overflow: hidden; text-overflow: ellipsis; }
   #cs-table td.product-cell { white-space: normal; word-break: break-word; overflow: visible; }
+  /* ── Customer Supplied sub-tabs ── */
+  #cs-old-table { table-layout: fixed; }
+  #cs-old-table td, #cs-old-table th { overflow: hidden; text-overflow: ellipsis; }
+  #cs-old-table td.product-cell { white-space: normal; word-break: break-word; overflow: visible; }
+  .cs-subtab-nav {
+    display: flex; gap: 4px; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border); padding-bottom: 0;
+  }
+  .cs-subtab-btn {
+    padding: 9px 20px; font-size: 13px; font-weight: 600;
+    color: var(--text2); cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent; transition: all 0.15s; font-family: var(--sans);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cs-subtab-btn:hover { color: var(--text); }
+  .cs-subtab-btn.active { color: var(--accent2); border-bottom-color: var(--accent); }
+  .cs-subtab-panel { display: none; }
+  .cs-subtab-panel.active { display: block; }
+
   thead th {
     background: var(--navy); padding: 10px 10px;
     text-align: left; font-size: 11px; font-weight: 600;
@@ -1306,6 +1325,10 @@
 <!-- ═══ CUSTOMER SUPPLIED ORDERS TAB ═══ -->
 <div class="tab-panel" id="panel-cs">
 <div class="app">
+  <div class="cs-subtab-nav">
+    <button class="cs-subtab-btn active" id="cs-stab-active" onclick="csSwitchSubtab('active')">📦 Active Orders <span class="tab-count" id="cs-active-tabCount" style="margin-left:2px">0</span></button>
+    <button class="cs-subtab-btn" id="cs-stab-old" onclick="csSwitchSubtab('old')">🗂 Old Shipment Notices <span class="tab-count" id="cs-old-tabCount" style="margin-left:2px">0</span></button>
+  </div>
   <div class="page-header">
     <div class="page-title">
       <h1>Customer Supplied Orders</h1>
@@ -1358,6 +1381,7 @@
     </div>
   </div>
 
+  <div class="cs-subtab-panel active" id="cs-panel-active">
   <div class="table-wrap">
     <div class="table-toolbar">
       <div class="table-toolbar-left">
@@ -1409,6 +1433,60 @@
       <div class="empty-title">No orders to display</div>
       Data will load from the API
     </div>
+  </div>
+  </div>
+
+  <div class="cs-subtab-panel" id="cs-panel-old">
+  <div class="table-wrap">
+    <div class="table-toolbar">
+      <div class="table-toolbar-left">
+        Line Items <span class="count-badge" id="cs-old-rowCount">0</span>
+        <span class="gen-email-wrap">
+          <button class="btn btn-primary btn-gen-email" id="cs-old-genEmailBtn" onclick="emailGenerate('cs')" disabled>📧 Generate Email</button>
+          <span class="gen-email-count" id="cs-old-selectedCount"></span>
+        </span>
+      </div>
+      <div class="table-toolbar-right" id="cs-old-newCount"></div>
+    </div>
+    <div class="table-scroll">
+      <table id="cs-old-table">
+        <colgroup>
+          <col style="width:38px"><!-- Select -->
+          <col style="width:130px"><!-- Customer -->
+          <col><!-- Product - takes remaining space -->
+          <col style="width:130px"><!-- Copy -->
+          <col style="width:60px"><!-- Qty -->
+          <col style="width:130px"><!-- Warehouse -->
+          <col style="width:100px"><!-- Condition -->
+          <col style="width:130px"><!-- PO Number -->
+          <col style="width:130px"><!-- Tracking -->
+          <col style="width:110px"><!-- Status -->
+          <col style="width:100px"><!-- Created Date -->
+          <col style="width:130px"><!-- Comments -->
+        </colgroup>
+        <thead><tr>
+          <th class="row-select-cell"><input type="checkbox" id="cs-old-selectAll" onclick="csOldSelectAllToggle(this)" title="Select all visible old shipment notices"></th>
+          <th onclick="csSortBy('organization')">Customer</th>
+          <th onclick="csSortBy('product_title')">Product</th>
+          <th>Copy</th>
+          <th onclick="csSortBy('totalQty')">Qty</th>
+          <th onclick="csSortBy('warehouse')">Warehouse</th>
+          <th onclick="csSortBy('condition')">Condition</th>
+          <th onclick="csSortBy('po_number')">PO Number</th>
+          <th>Tracking</th>
+          <th onclick="csSortBy('appStatus')">Status</th>
+          <th onclick="csSortBy('created_date')">Created</th>
+          <th>Comments</th>
+        </tr></thead>
+        <tbody id="cs-old-tableBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="cs-old-emptyState">
+      <span class="empty-icon">🗂</span>
+      <div class="empty-title">No old shipment notices</div>
+      Orders created more than 6 months ago will appear here
+    </div>
+  </div>
   </div>
 </div>
 </div>
@@ -3475,14 +3553,26 @@ function csUpdateSelectionUi() {
   const cnt = document.getElementById('cs-selectedCount');
   if (btn) btn.disabled = n === 0;
   if (cnt) cnt.textContent = n > 0 ? `${n} selected` : '';
+  const btnOld = document.getElementById('cs-old-genEmailBtn');
+  const cntOld = document.getElementById('cs-old-selectedCount');
+  if (btnOld) btnOld.disabled = n === 0;
+  if (cntOld) cntOld.textContent = n > 0 ? `${n} selected` : '';
   const visible = document.querySelectorAll('.cs-row-check');
   const all = document.getElementById('cs-selectAll');
+  const allOld = document.getElementById('cs-old-selectAll');
   if (all && visible.length > 0) {
     const checkedCount = [...visible].filter(b => b.checked).length;
     all.checked = checkedCount === visible.length;
     all.indeterminate = checkedCount > 0 && checkedCount < visible.length;
   } else if (all) {
     all.checked = false; all.indeterminate = false;
+  }
+  if (allOld && visible.length > 0) {
+    const checkedCount = [...visible].filter(b => b.checked).length;
+    allOld.checked = checkedCount === visible.length;
+    allOld.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+  } else if (allOld) {
+    allOld.checked = false; allOld.indeterminate = false;
   }
 }
 
@@ -3505,6 +3595,7 @@ function _emailObserveTbody(tbodyId, updateFn) {
 }
 _emailObserveTbody('inv-tableBody', invUpdateSelectionUi);
 _emailObserveTbody('cs-tableBody', csUpdateSelectionUi);
+_emailObserveTbody('cs-old-tableBody', csUpdateSelectionUi);
 
 // Build the email subject + body text for a group of orders headed to one
 // warehouse. Orders are grouped by FB PO Number for readability — same-PO
@@ -4271,6 +4362,7 @@ function invMarkCompleted(fid) {
 
 // ─── CUSTOMER SUPPLIED ORDERS (LIVE FROM API) ────────────────────────────────
 let csOrders  = {};
+let csActiveSubtab = 'active';
 let csSortCol = 'created_date', csSortDir = -1;
 let csNewIds  = new Set();
 function csLoadState()  { try { const s=localStorage.getItem('inbound_tracker_cs_v2'); if(s) csOrders=JSON.parse(s).orders||{}; } catch(e){} }
@@ -4460,11 +4552,49 @@ function csGetFiltered() {
     if (custs.length && !custs.includes(o.organization))  return false;
     if (checked.length && !checked.includes(o.appStatus)) return false;
     if (search) { const hay=[o.organization,o.product_title,o.warehouse,o.po_number,o.friendly_order_id].join(' ').toLowerCase(); if(!hay.includes(search)) return false; }
+    const _sixMonthsAgo = new Date(); _sixMonthsAgo.setMonth(_sixMonthsAgo.getMonth() - 6);
+    const _orderDate = o.created_date ? new Date(o.created_date) : null;
+    if (csActiveSubtab === 'old') {
+      if (!_orderDate || _orderDate >= _sixMonthsAgo) return false;
+    } else {
+      if (_orderDate && _orderDate < _sixMonthsAgo) return false;
+    }
     return true;
   });
 }
 function csSortBy(col) { if(csSortCol===col) csSortDir*=-1; else{csSortCol=col;csSortDir=1;} csRenderTable(); }
-function csRenderAll()  { csUpdateFilters(); csRenderTable(); csRenderStats(); updateTabCounts(); }
+function csRenderAll()  { csUpdateFilters(); csRenderTable(); csRenderStats(); updateTabCounts(); csUpdateSubtabCounts(); }
+function csSwitchSubtab(name) {
+  csActiveSubtab = name;
+  document.querySelectorAll('.cs-subtab-btn').forEach(function(b) { b.classList.remove('active'); });
+  var btn = document.getElementById('cs-stab-' + name);
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.cs-subtab-panel').forEach(function(p) { p.classList.remove('active'); });
+  var panel = document.getElementById('cs-panel-' + name);
+  if (panel) panel.classList.add('active');
+  csRenderAll();
+}
+function csUpdateSubtabCounts() {
+  var sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  var activeCount = 0, oldCount = 0;
+  Object.values(csOrders).forEach(function(o) {
+    if (isBlockedWarehouseCS(o.warehouse)) return;
+    var d = o.created_date ? new Date(o.created_date) : null;
+    if (d && d < sixMonthsAgo) oldCount++; else activeCount++;
+  });
+  var el1 = document.getElementById('cs-active-tabCount');
+  var el2 = document.getElementById('cs-old-tabCount');
+  if (el1) el1.textContent = activeCount;
+  if (el2) el2.textContent = oldCount;
+}
+function csOldSelectAllToggle(cb) {
+  document.querySelectorAll('.cs-row-check').forEach(function(box) {
+    box.checked = cb.checked;
+    var fid = box.getAttribute('data-fid');
+    if (cb.checked) csSelected.add(fid); else csSelected.delete(fid);
+  });
+  csUpdateSelectionUi();
+}
 function csRenderStats() {
   const all=Object.values(csOrders);
   const total=all.length||1;
@@ -4507,12 +4637,15 @@ function csCondBadge(raw) {
 function csRenderTable() {
   const orders = csGetFiltered();
   orders.sort((a,b)=>{ let av=a[csSortCol]||'',bv=b[csSortCol]||''; if(csSortCol==='totalQty'){av=+av;bv=+bv;} return av<bv?-csSortDir:av>bv?csSortDir:0; });
-  const tbody = document.getElementById('cs-tableBody');
-  const empty = document.getElementById('cs-emptyState');
+  const _isOldTab = csActiveSubtab === 'old';
+  const tbody = document.getElementById(_isOldTab ? 'cs-old-tableBody' : 'cs-tableBody');
+  const empty = document.getElementById(_isOldTab ? 'cs-old-emptyState' : 'cs-emptyState');
+  const _rowCountEl = document.getElementById(_isOldTab ? 'cs-old-rowCount' : 'cs-rowCount');
+  const _newCountEl = document.getElementById(_isOldTab ? 'cs-old-newCount' : 'cs-newCount');
   // Count total line items across all filtered orders
   const totalItems = orders.reduce((sum, o) => sum + ((o.items && o.items.length) || 1), 0);
-  document.getElementById('cs-rowCount').textContent = totalItems;
-  document.getElementById('cs-newCount').textContent = '';
+  if (_rowCountEl) _rowCountEl.textContent = totalItems;
+  if (_newCountEl) _newCountEl.textContent = '';
   if (orders.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
   empty.style.display = 'none';
 
